@@ -7,18 +7,17 @@ import ProblemModal from './ProblemModal';
 import Sidebar from './Sidebar';
 
 const Treemap = () => {
-  const [hoverInfo, setHoverInfo] = useState({ visible: false, name: '', id: '', issues: '', size: '', x: 0, y: 0 });
+  const [svgContent, setSvgContent] = useState('');
   const [problems, setProblems] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [filter, setFilter] = useState('');
-  const [level, setLevel] = useState('site'); // Default level
-  const [parentCode, setParentCode] = useState(''); // Default parent code
-  const [navigationStack, setNavigationStack] = useState([]); // Navigation stack
-  const [forwardStack, setForwardStack] = useState([]); // Forward stack for redo
-  const [visualizationType, setVisualizationType] = useState('squarified'); // Default visualization type
+  const [level, setLevel] = useState('site');
+  const [parentCode, setParentCode] = useState('');
+  const [navigationStack, setNavigationStack] = useState([]);
+  const [forwardStack, setForwardStack] = useState([]);
+  const [visualizationType, setVisualizationType] = useState('squarified');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const isTabletOrLarger = useMediaQuery('(min-width: 600px)');
-  const [svgContent, setSvgContent] = useState(''); // SVG content state
-  const [sidebarOpen, setSidebarOpen] = useState(true); // Sidebar open state
 
   useEffect(() => {
     fetchSvgData();
@@ -26,66 +25,67 @@ const Treemap = () => {
 
   const fetchSvgData = async () => {
     try {
-      console.log(`Fetching SVG for level: ${level}, parentCode: ${parentCode}, filter: ${filter}, visualizationType: ${visualizationType}`);
       const response = await fetch(`/generate_svg?level=${level}&parent_code=${parentCode}&work_request_status=${filter}&visualization_type=${visualizationType}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch SVG data: ${response.statusText}`);
       }
       const text = await response.text();
-      setSvgContent(text); // Set the SVG content state
-      console.log("SVG content updated");
+      setSvgContent(text);
     } catch (error) {
       console.error("Error fetching SVG data:", error);
-      setSvgContent(`<svg><text x="10" y="20" font-size="16" fill="red">Error: ${error.message}</text></svg>`); // Display error in the SVG area
+      setSvgContent(`<svg><text x="10" y="20" font-size="16" fill="red">Error: ${error.message}</text></svg>`);
     }
   };
 
   const attachHoverHandlers = () => {
     d3.selectAll("rect").on("mouseover", function () {
       const rect = d3.select(this);
-
-      const name = rect.attr("data_name");
-      const id = rect.attr("id");
-      const issues = rect.attr("data_issues");
-      const size = rect.attr("data_size");
-
-      console.log(`Hovering over: ${name}, ID: ${id}, Issues: ${issues}, Size: ${size}`);
-
-      if (!name || !id || !issues || !size) {
-        console.warn("Missing data attributes for this element.");
-        return;
+      let id = rect.attr("id");
+      const className = rect.attr("class");
+      if (className === "building") {
+        id = id.split(":")[1];
+      } else if (className === "floor") {
+        id = id.split(":")[2];
+      } else if (className === "unit") {
+        id = id.split(":")[3];
       }
+      const hoverBox = d3.select(`#hover-info-${id}`);
+      hoverBox.style("visibility", "visible");
 
-      rect.style("stroke", "#2196f3").style("stroke-width", "3");
+      rect.on("mousemove", function (event) {
+        const [x, y] = d3.pointer(event);
 
-      const bbox = this.getBoundingClientRect();
-      let x = bbox.right + 10;
-      let y = bbox.bottom - 10;
+        const boxWidth = hoverBox.node().offsetWidth;
+        const boxHeight = hoverBox.node().offsetHeight;
+        const pageWidth = window.innerWidth;
+        const pageHeight = window.innerHeight;
 
-      const hoverBoxWidth = 300;
-      const hoverBoxHeight = 120;
+        let newX = x + 10;
+        let newY = y + 10;
 
-      if (x + hoverBoxWidth > window.innerWidth) {
-        x = bbox.left - hoverBoxWidth - 10;
-      }
+        if (newX + boxWidth > pageWidth) {
+          newX = x - boxWidth - 10;
+        }
+        if (newY + boxHeight > pageHeight) {
+          newY = y - boxHeight - 10;
+        }
 
-      if (y + hoverBoxHeight > window.innerHeight) {
-        y = bbox.top - hoverBoxHeight - 10;
-      }
+        hoverBox.style("left", `${newX}px`).style("top", `${newY}px`);
+      });
 
-      if (x < 0) {
-        x = 10;
-      }
-
-      if (y < 0) {
-        y = 10;
-      }
-
-      setHoverInfo({ visible: true, name, id, issues, size, x, y });
     }).on("mouseout", function () {
       const rect = d3.select(this);
-      rect.style("stroke", "black").style("stroke-width", "1");
-      setHoverInfo({ visible: false, name: '', id: '', issues: '', size: '', x: 0, y: 0 });
+      let id = rect.attr("id");
+      const className = rect.attr("class");
+      if (className === "building") {
+        id = id.split(":")[1];
+      } else if (className === "floor") {
+        id = id.split(":")[2];
+      } else if (className === "unit") {
+        id = id.split(":")[3];
+      }
+      const hoverBox = d3.select(`#hover-info-${id}`);
+      hoverBox.style("visibility", "hidden");
     });
   };
 
@@ -125,7 +125,6 @@ const Treemap = () => {
           return;
         }
         const problems = await response.json();
-        console.log("Problems fetched:", problems);
         setProblems(problems);
         setModalOpen(true);
       } catch (error) {
@@ -156,12 +155,40 @@ const Treemap = () => {
     if (svgContent) {
       const container = d3.select("#treemap");
 
-      // Clear any existing SVG content before inserting new one
       container.selectAll('*').remove();
-
-      // Insert the new SVG content
       container.html(svgContent);
-      
+
+      container.selectAll("rect").each(function () {
+        const rect = d3.select(this);
+        let id = rect.attr("id");
+        const className = rect.attr("class");
+
+        if (className === "building") {
+          id = id.split(":")[1];
+        } else if (className === "floor") {
+          id = id.split(":")[2];
+        } else if (className === "unit") {
+          id = id.split(":")[3];
+        }
+        
+        const hoverInfoBox = container.append("div")
+          .attr("id", `hover-info-${id}`)
+          .attr("class", "hover-info-box")
+          .style("visibility", "hidden")
+          .style("position", "absolute")
+          .style("background-color", "white")
+          .style("border", "1px solid #ccc")
+          .style("padding", "5px")
+          .style("border-radius", "5px")
+          .style("z-index", "10")
+          .style("pointer-events", "none");
+
+          hoverInfoBox.append("p").text(`Name: ${rect.attr("data_name")}`);
+          hoverInfoBox.append("p").text(`ID: ${id}`);
+          hoverInfoBox.append("p").text(`Issues: ${rect.attr("data_issues")}`);
+          hoverInfoBox.append("p").text(`Size: ${rect.attr("data_size")}`);
+      });
+
       attachHoverHandlers();
       attachClickHandlers();
     }
@@ -185,8 +212,8 @@ const Treemap = () => {
         sx={{
           flexGrow: 1,
           transition: 'margin-left 0.3s',
-          width: sidebarOpen ? 'calc(100vw - 250px)' : 'calc(100vw - 100px)',
-          height: '100vh',
+          width: sidebarOpen ? 'calc(100vw - 250px)' : 'calc(100vw - 80px)',
+          height: '100%',
           position: 'relative',
           overflow: 'hidden',
         }}
@@ -202,29 +229,6 @@ const Treemap = () => {
           />
         )}
 
-        {hoverInfo.visible && isTabletOrLarger && (
-          <Box
-            sx={{
-              position: 'absolute',
-              left: hoverInfo.x,
-              top: hoverInfo.y,
-              backgroundColor: 'white',
-              border: '1px solid #ccc',
-              padding: 2,
-              borderRadius: 1,
-              boxShadow: 3,
-              zIndex: 10,
-              maxWidth: '300px',
-              transform: 'translate(10px, -10px)',
-              pointerEvents: 'none',
-            }}
-          >
-            <Typography variant="subtitle1"><strong>Name:</strong> {hoverInfo.name}</Typography>
-            <Typography variant="subtitle1"><strong>ID:</strong> {hoverInfo.id}</Typography>
-            <Typography variant="subtitle1"><strong>Issues:</strong> {hoverInfo.issues}</Typography>
-            <Typography variant="subtitle1"><strong>Size:</strong> {hoverInfo.size}</Typography>
-          </Box>
-        )}
       </Box>
       <ProblemModal open={modalOpen} onClose={() => setModalOpen(false)} problems={problems} />
     </Box>
