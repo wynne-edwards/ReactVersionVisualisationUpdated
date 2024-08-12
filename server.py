@@ -1,0 +1,608 @@
+import math
+import re
+from flask import Flask, request, send_from_directory, jsonify
+import pyodbc
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import os
+import squarify
+import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
+
+app = Flask(__name__, static_folder='client/build', static_url_path='')
+
+database_file = '../database/Backup of CleanRhodesMaintenanceBackupV3.accdb' # Database file path
+output_svg_file = '../database/treemap.svg' #Temp, I have no idea if this is even required anymore.
+cache = {}
+if os.path.exists(database_file):
+    print(f"File exists at: {database_file}")
+else:
+    print(f"File not found. Check the path: {database_file}")
+
+# Optionally, try opening the file to see if it's accessible
+try:
+    with open(database_file, 'rb') as f:
+        print("File opened successfully")
+except Exception as e:
+    print(f"Failed to open file: {e}")
+class Site:
+    def __init__(self, siteCode, siteName):
+        self.siteCode = siteCode
+        self.siteName = siteName
+        self.buildings = []
+        
+    def add_building(self, building):
+        self.buildings.append(building)
+    
+    def get_total_issue_count(self):
+        return sum([b.get_total_issue_count() for b in self.buildings])
+    
+    def get_site_size(self):
+        return sum([b.get_building_size() for b in self.buildings])
+    
+    def get_min_size(self):
+        return max([b.get_building_size() for b in self.buildings])
+
+class Building:
+    def __init__(self, buildingCode, buildingName):
+        self.buildingCode = buildingCode
+        self.buildingName = buildingName
+        self.floors = []
+        
+    def add_floor(self, floor):
+        self.floors.append(floor)
+    
+    def get_total_issue_count(self):
+        return sum([f.get_total_issue_count() for f in self.floors])
+    
+    def get_building_size(self):
+        return sum([f.get_floor_size() for f in self.floors])
+    
+    def get_min_size(self):
+        return max([f.get_floor_size() for f in self.floors])
+
+class Floor:
+    def __init__(self, floorCode, floorName):
+        self.floorCode = floorCode
+        self.floorName = floorName
+        self.units = []
+        
+    def add_unit(self, unit):
+        self.units.append(unit)
+    
+    def get_total_issue_count(self):
+        return sum([u.issueCount for u in self.units])
+    
+    def get_floor_size(self):
+        return sum([u.unitSize for u in self.units])
+    
+    def get_min_size(self):
+        return max([u.unitSize for u in self.units])
+
+class Unit:
+    def __init__(self, unitCode, unitName, issueCount):
+        self.unitCode = unitCode
+        self.unitName = unitName
+        self.issueCount = issueCount
+        self.unitSize = 0
+        
+    def add_unit_size(self, size):
+        self.unitSize = size
+
+def extract_data_from_access(filters):
+    conn_str = (
+        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+        r'DBQ=' + database_file + ';'
+    )
+    conn = pyodbc.connect(conn_str)
+    query = """
+    SELECT 
+        Location.[Building Code],
+        Building.[Building Name], 
+        Location.[Floor Code], 
+        Unit.[Unit Code], 
+        Site.[SiteCode],
+        Site.[SiteName], 
+        Floor.[Floor Name], 
+        Unit.[Unit Name], 
+        COUNT(Combined.[Activity Log ID]) as IssueCount
+    FROM ((((Combined
+    INNER JOIN Location ON Combined.LocationID = Location.LocationID)
+    INNER JOIN Unit ON Location.UnitID = Unit.UnitID)
+    INNER JOIN Building ON Location.[Building Code] = Building.[Building Code])
+    INNER Join Site ON Location.[Site Code] = Site.[SiteCode])
+    INNER JOIN Floor ON Location.[Floor Code] = Floor.[Floor Code]
+    WHERE 1=1
+    """
+    
+    if 'work_request_status' in filters:
+        query += f"AND Combined.[Work Request Status] = '{filters['work_request_status']}'"
+    
+    query += """
+    GROUP BY 
+        Location.[Building Code],
+        Building.[Building Name], 
+        Location.[Floor Code], 
+        Unit.[Unit Code],
+        Site.[SiteCode],
+        Site.[SiteName],
+        Floor.[Floor Name],
+        Unit.[Unit Name];
+    """
+    cursor = conn.cursor()
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    df = pd.DataFrame.from_records(rows, columns=[desc[0] for desc in cursor.description])
+    return df
+
+# Create all the relevent sites with their composite buidlings, floors and units.
+def generate_treemap_data(df):
+    sites = {}
+    counter = 0
+    for _, row in df.iterrows():
+        siteCode = row["SiteCode"]
+        siteName = row["SiteName"]
+        buildingCode = row["Building Code"]
+        buildingName = row["Building Name"]
+        floorCode = row["Floor Code"]
+        floorName = row["Floor Name"]
+        unitCode = row["Unit Code"]
+        unitName = row["Unit Name"]
+        issueCount = row["IssueCount"]
+        if siteCode not in sites:
+            sites[siteCode] = Site(siteCode, siteName)
+        site = sites[siteCode]
+        
+        building = next((b for b in site.buildings if b.buildingCode == buildingCode), None)
+        if not building:
+            building = Building(buildingCode, buildingName)
+            site.add_building(building)
+        
+        floor = next((f for f in building.floors if f.floorCode == floorCode), None)
+        if not floor:
+            floor = Floor(floorCode, floorName)
+            building.add_floor(floor)
+            
+        unit = next((u for u in floor.units if u.unitCode == unitCode), None)
+        if not unit:
+            unit = Unit(unitCode, unitName, issueCount)
+            floor.add_unit(unit)
+    print(f"Processed {counter} rows.")
+    # Calculate sizes for all units in parallel because otherwise its horribly slow.
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for site in sites.values():
+            for building in site.buildings:
+                for floor in building.floors:
+                    parent_code = f"{site.siteCode}:{building.buildingCode}:{floor.floorCode}"
+                    futures.append(executor.submit(calculate_and_add_unit_sizes, floor, parent_code))
+        for future in futures:
+            future.result()
+                
+    return sites
+
+# Create a colour scale based on the number of issues for that level. I pass the dataframe with only that level
+def generate_color_scale(df, column='IssueCount'):
+    norm = plt.Normalize(df[column].min(), df[column].max())
+    colors = plt.cm.Reds(norm(df[column]))
+    df['Color'] = [mcolors.to_hex(color) for color in colors]
+    return df
+
+def create_interactive_treemap(sites, level, output_file, width, height, min_size=200):
+    svg_ns = "http://www.w3.org/2000/svg"
+    ET.register_namespace("", svg_ns)
+    
+    new_svg = ET.Element("svg", xmlns=svg_ns, viewBox=f"0 0 {width} {height}", width="100%", height="100%")
+    x, y = 0, 0
+    site_rects = []
+    
+    if level == 'site':
+        all_issues = [site.get_total_issue_count() for site in sites.values()]
+        norm = plt.Normalize(min(all_issues), max(all_issues))
+        min_size = max([site.get_min_size() for site in sites.values()])
+        for site_code, site in sites.items():
+            site_size = site.get_site_size()
+            site_issues = site.get_total_issue_count()
+            color = mcolors.to_hex(plt.cm.Blues(norm(site_issues)))
+            
+            site_rect = {
+                'id': site_code,
+                'value': max(site_size, min_size*(1/10)),
+                'color': color,
+                'name': site.siteName,
+                'issues': site_issues,
+                'size': site_size
+            }
+            site_rects.append(site_rect)
+    elif level == 'building':
+        all_issues = [building.get_total_issue_count() for site in sites.values() for building in site.buildings]
+        norm = plt.Normalize(min(all_issues), max(all_issues))
+        min_size = max([building.get_min_size() for site in sites.values() for building in site.buildings])
+        for site_code, site in sites.items():
+            for building in site.buildings:
+                building_size = building.get_building_size()
+                building_issues = building.get_total_issue_count()
+                color = mcolors.to_hex(plt.cm.Blues(norm(building_issues))) 
+                
+                building_rect = {
+                    'id': f"{site_code}:{building.buildingCode}",
+                    'value': max(building_size, min_size*(1/10)),
+                    'color': color,
+                    'name': building.buildingName,
+                    'issues': building_issues,
+                    'size': building_size
+                }
+                site_rects.append(building_rect)
+    elif level == 'floor':
+        all_issues = [floor.get_total_issue_count() for site in sites.values() for building in site.buildings for floor in building.floors]
+        norm = plt.Normalize(min(all_issues), max(all_issues))
+        min_size = max([floor.get_min_size() for site in sites.values() for building in site.buildings for floor in building.floors])
+        for site_code, site in sites.items():
+            for building in site.buildings:
+                for floor in building.floors:
+                    
+                    floor_size = floor.get_floor_size()
+                    floor_issues = floor.get_total_issue_count()
+                    color = mcolors.to_hex(plt.cm.Blues(norm(floor_issues)))
+                    
+                    floor_rect = {
+                        'id': f"{site_code}:{building.buildingCode}:{floor.floorCode}",
+                        'value': max(floor_size, min_size*(1/10)),
+                        'color': color,
+                        'name': floor.floorName,
+                        'issues': floor_issues,
+                        'size': floor_size
+                    }
+                    site_rects.append(floor_rect)
+    elif level == 'unit':
+        all_issues = [unit.issueCount for site in sites.values() for building in site.buildings for floor in building.floors for unit in floor.units]
+        norm = plt.Normalize(min(all_issues), max(all_issues))
+        min_size = max([unit.unitSize for site in sites.values() for building in site.buildings for floor in building.floors for unit in floor.units])
+        for site_code, site in sites.items():
+            for building in site.buildings:
+                for floor in building.floors:
+                    for unit in floor.units:
+                        unit_size = unit.unitSize
+                        unit_issues = unit.issueCount
+                        color = mcolors.to_hex(plt.cm.Blues(norm(unit_issues)))
+                        
+                        unit_rect = {
+                            'id': f"{site_code}:{building.buildingCode}:{floor.floorCode}:{unit.unitCode}",
+                            'value': max(unit_size, min_size*(1/4)),
+                            'color': color,
+                            'name': unit.unitName,
+                            'issues': unit_issues,
+                            'size': unit_size
+                        }
+                        site_rects.append(unit_rect)
+    
+    sizes = [rect['value'] for rect in site_rects]
+    norm_sizes = squarify.normalize_sizes(sizes, width, height)
+    rects = squarify.padded_squarify(norm_sizes, x, y, width, height)
+    
+    for rect, site_rect in zip(rects, site_rects):
+        group_elem = ET.Element("g")
+        
+        elem = ET.Element("rect", x=str(rect['x']), y=str(rect['y']), width=str(rect['dx']), height=str(rect['dy']), fill=site_rect['color'], id=site_rect['id'], stroke="black", stroke_width="1", data_name=site_rect['name'], data_issues=str(site_rect['issues']), data_size=str(site_rect['size']))
+        if level == 'site':
+            elem.set("class", "site")
+        elif level == 'building':
+            elem.set("class", "building")
+        elif level == 'floor':
+            elem.set("class", "floor")
+        elif level == 'unit':
+            elem.set("class", "unit")
+        group_elem.append(elem)
+        
+        new_svg.append(group_elem)
+    
+    tree = ET.ElementTree(new_svg)
+    with open(output_file, 'wb') as f:
+        tree.write(f, xml_declaration=True, encoding='utf-8')
+
+
+# Calculate the size of a unit based on the building plan
+def calculate_unit_size(floor, parent_code):
+    site_code, building_code, floor_code = parent_code.split(':')
+    
+    try:
+        paths, texts, tree, root = parse_svg(f'../database/Architectural Drawings/{site_code}-{building_code}-{floor_code}.svg')
+        
+        min_size = 50  # Default size for units for if no match is found later on
+        closed_paths = identify_closed_paths(paths, min_size)
+        
+        room_associations = generate_room_associations(closed_paths, texts)
+        
+        unit_sizes = []
+        for unit in floor.units:
+            matched = False
+            for assoc in room_associations:
+                try:
+                    if assoc["id"].strip().lower().split(";")[2] == unit.unitCode.strip().lower():
+                        unit_size = assoc["length"]
+                        unit_sizes.append((unit.unitCode, unit_size))
+                        matched = True
+                        break
+                except IndexError:
+                    continue
+            if not matched:
+                unit_sizes.append((unit.unitCode, min_size))  # default size when no match is found
+
+        # Add any units from the building plan that are not in the database
+        for assoc in room_associations:
+            try:
+                unit_code = assoc["id"].strip().lower().split(";")[2]
+                if unit_code.startswith("int") or unit_code.startswith("ext"):
+                    continue  # Ignore IDs starting with int or ext
+                if not any(unit.unitCode.strip().lower() == unit_code for unit in floor.units):
+                    unit_size = assoc["length"]
+                    unit_sizes.append((unit_code, unit_size))
+                    # Add the unit with issue count 0
+                    new_unit = Unit(unit_code, assoc["room_name"], 0)
+                    floor.add_unit(new_unit)
+            except IndexError:
+                continue
+        
+        return unit_sizes
+    except FileNotFoundError:
+        print(f"Building plan not found for {parent_code}. Setting unit sizes to minimum.")
+        return [(unit.unitCode, 50) for unit in floor.units]
+
+def calculate_and_add_unit_sizes(floor, parent_code):
+    unit_sizes = calculate_unit_size(floor, parent_code)
+    for unit_code, unit_size in unit_sizes:
+        for unit in floor.units:
+            if unit.unitCode == unit_code:
+                unit.add_unit_size(unit_size)
+                break
+
+# Function to recursively find all path elements and text elements in the SVG with detailed attributes
+def find_paths_and_texts(element, depth=0):
+    paths = []
+    texts = []
+    indent = " " * (depth * 2)
+    if element.tag.endswith('path'):
+        d = element.attrib.get('d', 'N/A')
+        class_name = element.attrib.get('class', 'N/A')
+        id_name = element.attrib.get('id', 'N/A')
+        paths.append((element, d, class_name, id_name))
+    if element.tag.endswith('text'):
+        text_content = element.text
+        x = float(element.attrib.get('x', '0'))
+        y = float(element.attrib.get('y', '0'))
+        texts.append((element, text_content, x, y))
+    for child in element:
+        paths_and_texts = find_paths_and_texts(child, depth + 1)
+        paths.extend(paths_and_texts[0])
+        texts.extend(paths_and_texts[1])
+    return paths, texts
+
+# Function to calculate the total length of the path
+def calculate_path_length(d):
+    segments = re.findall(r'[MmLlHhVvZz]|[-+]?\d*\.\d+|[-+]?\d+', d)
+    current_pos = (0, 0)
+    start_pos = (0, 0)
+    length = 0
+    i = 0
+
+    while i < len(segments):
+        command = segments[i]
+
+        if command in 'Mm':
+            x = float(segments[i + 1])
+            y = float(segments[i + 2])
+            if command == 'm':
+                x += current_pos[0]
+                y += current_pos[1]
+            start_pos = (x, y)
+            current_pos = (x, y)
+            i += 3
+
+        elif command in 'Ll':
+            x = float(segments[i + 1])
+            y = float(segments[i + 2])
+            if command == 'l':
+                x += current_pos[0]
+                y += current_pos[1]
+            length += math.sqrt((x - current_pos[0])**2 + (y - current_pos[1])**2)
+            current_pos = (x, y)
+            i += 3
+
+        elif command in 'Hh':
+            x = float(segments[i + 1])
+            if command == 'h':
+                x += current_pos[0]
+            length += abs(x - current_pos[0])
+            current_pos = (x, current_pos[1])
+            i += 2
+
+        elif command in 'Vv':
+            y = float(segments[i + 1])
+            if command == 'v':
+                y += current_pos[1]
+            length += abs(y - current_pos[1])
+            current_pos = (current_pos[0], y)
+            i += 2
+
+        elif command in 'Zz':
+            length += math.sqrt((start_pos[0] - current_pos[0])**2 + (start_pos[1] - current_pos[1])**2)
+            current_pos = start_pos
+            i += 1
+
+        else:
+            i += 1
+    return length
+
+# Parse SVG and extract path elements and text elements
+def parse_svg(file):
+    tree = ET.parse(file)
+    root = tree.getroot()
+    paths, texts = find_paths_and_texts(root)
+    return paths, texts, tree, root
+
+def get_path_bounds(d):
+    numbers = list(map(float, re.findall(r'[-+]?\d*\.\d+|[-+]?\d+', d)))
+    xs = numbers[::2]
+    ys = numbers[1::2]
+    return min(xs), min(ys), max(xs), max(ys)
+
+# Function to check if a path is closed
+def is_closed_path(d):
+    return d.lower().strip().endswith('z')
+
+# Identify closed paths larger than the specified size
+def identify_closed_paths(paths, min_size):
+    closed_paths = []
+    for path in paths:
+        d = path[1]
+        if is_closed_path(d):
+            x0, y0, x1, y1 = get_path_bounds(d)
+            width = x1 - x0
+            height = y1 - y0
+            if width >= min_size and height >= min_size:
+                closed_paths.append(path)
+    return closed_paths
+
+# Generate a list of room associations with paths and texts
+def generate_room_associations(paths, texts):
+    associations = []
+    for idx, (path_element, d, class_name, id_name) in enumerate(paths):
+        if idx < len(texts):
+            text_element, room_name, x, y = texts[idx]
+        else:
+            room_name = f"Room {idx+1}"
+            x, y = 0, 0 
+        length = calculate_path_length(d)
+        associations.append({
+            "room_name": room_name,
+            "path": d,
+            "class": class_name,
+            "id": id_name,
+            "text_x": x,
+            "text_y": y,
+            "length": length
+        })
+    return associations
+
+@app.route('/')
+def index():
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.route('/generate_svg', methods=['GET'])
+def generate_svg():
+    level = request.args.get('level')
+    parent_code = request.args.get('parent_code')
+    visualization_type = request.args.get('visualization_type', 'squarified')  # Default to squarified
+    width = int(request.args.get('width', 1920))
+    height = int(request.args.get('height', 930))
+    
+    filters = {}
+    work_request_status = request.args.get('work_request_status')
+    if work_request_status:
+        filters['work_request_status'] = work_request_status
+    
+    cache_key = f"{level}-{parent_code}-{filters}-{visualization_type}"
+    
+    if cache_key in cache:
+        svg_content = cache[cache_key]['svg_content']
+    else:
+        df = extract_data_from_access(filters)
+        df = generate_color_scale(df)
+        hierarchy = df
+        
+        if visualization_type == 'squarified':
+            if level == 'site':
+                sites = generate_treemap_data(hierarchy)
+                min_size = min([site.get_site_size() for site in sites.values()])
+            elif level == 'building':
+                hierarchy = df[df['SiteCode'] == parent_code]
+                sites = generate_treemap_data(hierarchy)
+                min_size = min([building.get_building_size() for site in sites.values() for building in site.buildings])
+            elif level == 'floor':
+                site_code, building_code = parent_code.split(':')
+                hierarchy = df[(df['SiteCode'] == site_code) & (df['Building Code'] == building_code)]
+                sites = generate_treemap_data(hierarchy)
+                min_size = min([floor.get_floor_size() for site in sites.values() for building in site.buildings for floor in building.floors])
+            elif level == 'unit':
+                site_code, building_code, floor_code = parent_code.split(':')
+                hierarchy = df[(df['SiteCode'] == site_code) & (df['Building Code'] == building_code) & (df['Floor Code'] == floor_code)]
+                sites = generate_treemap_data(hierarchy)
+                min_size = min([unit.unitSize for site in sites.values() for building in site.buildings for floor in building.floors for unit in floor.units])
+            else:
+                return "Invalid level", 400
+            
+            create_interactive_treemap(sites, level, output_svg_file, width, height, min_size=min_size)
+        
+        # elif visualization_type == 'building-plans':
+            
+        
+        with open(output_svg_file, 'r') as f:
+            svg_content = f.read()
+        
+        cache[cache_key] = {'svg_content': svg_content, 'filters': filters}
+    
+    return svg_content
+
+
+
+@app.route('/clear_cache', methods=['GET'])
+def clear_cache():
+    filter_value = request.args.get('filter')
+    keys_to_delete = [key for key in cache.keys() if filter_value in key]
+    for key in keys_to_delete:
+        del cache[key]
+    return "Cache cleared", 200
+
+@app.route('/get_unit_problems', methods=['GET'])
+def get_unit_problems():
+    parent_code = request.args.get('unit_code')
+    if not parent_code:
+        return "Unit code is required", 400
+    site_code, building_code, floor_code, unit_code = parent_code.split(':')
+    conn_str = (
+        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+        r'DBQ=' + database_file + ';'
+    )
+    try:
+        conn = pyodbc.connect(conn_str)
+    except pyodbc.Error as e:
+        error_message = f"Database connection error: {str(e)}"
+        print(error_message)
+        return error_message, 500
+
+    query = """
+    SELECT 
+        Combined.[Activity Log ID], 
+        Combined.[Work Description]
+    FROM (Combined
+    INNER JOIN Location ON Combined.LocationID = Location.LocationID)
+    INNER JOIN Unit ON Location.[UnitID] = Unit.[UnitID]
+    WHERE 1=1
+    """
+    
+    query += f"AND Location.[Site Code] = '{site_code}' AND Location.[Building Code] = '{building_code}' AND Location.[Floor Code] = '{floor_code}' AND Unit.[Unit Code] = '{unit_code}'"
+    print(query)
+    try:
+        cursor = conn.cursor()
+        print("Executing query:", query)
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        conn.close()
+
+        problems = [{'log_id': row[0], 'description': row[1]} for row in rows]
+        print(f"Found {len(problems)} problems for unit {unit_code}")
+        return jsonify(problems)
+    except pyodbc.Error as e:
+        error_message = f"Database query error: {str(e)}"
+        print(error_message)
+        return error_message, 500
+    except Exception as e:
+        error_message = f"General error: {str(e)}"
+        print(error_message)
+        return error_message, 500
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5001)
