@@ -58,7 +58,7 @@ const Treemap = () => {
         } else if (className === "unit") {
           id = id.split(":")[3];
         } else if (className === "unit-room") {
-          id = id.split(";")[2];  // Make sure this correctly matches the format used in your SVG elements
+          id = id.split(";")[2];
         }
 
         const hoverBox = d3.select(`#hover-info-${id}`);
@@ -122,7 +122,7 @@ const Treemap = () => {
       setLevel('building');
       setParentCode(siteId);
     });
-  
+
     d3.selectAll(".building").on("click", function () {
       const buildingId = d3.select(this).attr("id");
       setNavigationStack([...navigationStack, { level, parentCode }]);
@@ -130,7 +130,7 @@ const Treemap = () => {
       setLevel('floor');
       setParentCode(buildingId);
     });
-  
+
     d3.selectAll(".floor").on("click", function () {
       const floorId = d3.select(this).attr("id");
       setNavigationStack([...navigationStack, { level, parentCode }]);
@@ -138,10 +138,9 @@ const Treemap = () => {
       setLevel('unit');
       setParentCode(floorId);
     });
-  
-    d3.selectAll(".unit, path.unit-room").on("click", async function () {
+
+    d3.selectAll(".unit, .unit-room").on("click", async function () {
       const unitId = d3.select(this).attr("id");
-  
       try {
         const response = await fetch(`/get_unit_problems?unit_code=${unitId}`);
         if (!response.ok) {
@@ -184,7 +183,7 @@ const Treemap = () => {
       container.selectAll('*').remove();
       container.html(svgContent);
 
-      container.selectAll("rect, path.unit-room").each(function () {
+      container.selectAll("rect, path.unit-room, path.unit").each(function () {
         const element = d3.select(this);
         let id = element.attr("id");
         const className = element.attr("class");
@@ -193,8 +192,8 @@ const Treemap = () => {
           id = id.split(":")[1];
         } else if (className === "floor") {
           id = id.split(":")[2];
-        } else if (className === "unit-room") {
-          id = id.split(";")[2];  // Match the hover handlers' split logic
+        } else if (className === "unit" || className === "unit-room") {
+          id = id.split(";")[2] || id.split(":")[3]; 
         }
 
         container.append("div")
@@ -211,41 +210,7 @@ const Treemap = () => {
           .style("font-family", "'Roboto', 'Helvetica', 'Arial', sans-serif")
           .style("font-size", "1rem")
           .html(`
-            <strong>Name:</strong> ${element.attr("data_name")}<br />
-            <strong>ID:</strong> ${id}<br />
-            <strong>Issues:</strong> ${element.attr("data_issues")}<br />
-            <strong>Size:</strong> ${element.attr("data_size")}
-          `);
-      });
-
-      container.selectAll("rect, path.unit").each(function () {
-        const element = d3.select(this);
-        let id = element.attr("id");
-        const className = element.attr("class");
-
-        if (className === "building") {
-          id = id.split(":")[1];
-        } else if (className === "floor") {
-          id = id.split(":")[2];
-        } else if (className === "unit"){
-          id = id.split(":")[3];  
-        }
-
-        container.append("div")
-          .attr("id", `hover-info-${id}`)
-          .attr("class", "hover-info-box")
-          .style("visibility", "hidden")
-          .style("position", "absolute")
-          .style("background-color", "white")
-          .style("border", "1px solid #ccc")
-          .style("padding", "10px")
-          .style("border-radius", "5px")
-          .style("z-index", "10")
-          .style("pointer-events", "none")
-          .style("font-family", "'Roboto', 'Helvetica', 'Arial', sans-serif")
-          .style("font-size", "1rem")
-          .html(`
-            <strong>Name:</strong> ${element.attr("data_name")}<br />
+            <strong>ID:</strong> ${element.attr("data_name")}<br />
             <strong>ID:</strong> ${id}<br />
             <strong>Issues:</strong> ${element.attr("data_issues")}<br />
             <strong>Size:</strong> ${element.attr("data_size")}
@@ -281,7 +246,6 @@ const Treemap = () => {
           overflow: 'hidden',
         }}
       >
-        {/* Loading Spinner */}
         <CircularProgress
           sx={{
             position: 'absolute',
@@ -291,7 +255,6 @@ const Treemap = () => {
             visibility: loading ? 'visible' : 'hidden',
           }}
         />
-        {/* SVG Content */}
         <div
           dangerouslySetInnerHTML={{ __html: svgContent }}
           style={{
@@ -302,7 +265,7 @@ const Treemap = () => {
           }}
         />
       </Box>
-      <ProblemModal open={modalOpen} onClose={() => setModalOpen(false)} problems={problems} />
+      <ProblemModal open={modalOpen} handleClose={() => setModalOpen(false)} problems={problems} />
     </Box>
   );
 };

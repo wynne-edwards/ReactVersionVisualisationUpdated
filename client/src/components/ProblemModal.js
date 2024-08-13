@@ -12,9 +12,9 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
 
-const ProblemModal = ({ open, onClose, problems }) => {
+const ProblemModal = ({ open, handleClose, problems }) => {
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <DialogTitle>Problem Descriptions</DialogTitle>
       <DialogContent>
         {problems.length > 0 ? (
@@ -41,7 +41,7 @@ const ProblemModal = ({ open, onClose, problems }) => {
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} sx={{ mt: 2 }} variant="contained" color="primary">
+        <Button onClick={handleClose} sx={{ mt: 2 }} variant="contained" color="primary">
           Close
         </Button>
       </DialogActions>
