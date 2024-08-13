@@ -625,7 +625,6 @@ def generate_svg():
                                         continue
                                     if room_code == unit_code:
                                         room_element = path_elem
-                                        print(f"Found room element for unit {unit_code}")
                                         break
 
                                 if room_element is not None:

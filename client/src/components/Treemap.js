@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import * as d3 from 'd3';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import CircularProgress from '@mui/material/CircularProgress';
 import ProblemModal from './ProblemModal';
 import Sidebar from './Sidebar';
 
@@ -16,12 +17,14 @@ const Treemap = () => {
   const [forwardStack, setForwardStack] = useState([]);
   const [visualizationType, setVisualizationType] = useState('squarified');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetchSvgData();
   }, [filter, level, parentCode, visualizationType]);
 
   const fetchSvgData = async () => {
+    setLoading(true); // Show loading spinner
     try {
       const response = await fetch(`/generate_svg?level=${level}&parent_code=${parentCode}&work_request_status=${filter}&visualization_type=${visualizationType}`);
       if (!response.ok) {
@@ -32,6 +35,8 @@ const Treemap = () => {
     } catch (error) {
       console.error("Error fetching SVG data:", error);
       setSvgContent(`<svg><text x="10" y="20" font-size="16" fill="red">Error: ${error.message}</text></svg>`);
+    } finally {
+      setLoading(false); // Hide loading spinner once data is fetched
     }
   };
 
@@ -104,8 +109,6 @@ const Treemap = () => {
         d3.select(`#hover-info-${id}`).style("visibility", "hidden");
       });
   };
-
-
 
   const attachClickHandlers = () => {
     d3.selectAll(".site").on("click", function () {
@@ -239,16 +242,26 @@ const Treemap = () => {
           overflow: 'hidden',
         }}
       >
-        {svgContent && (
-          <div
-            dangerouslySetInnerHTML={{ __html: svgContent }}
-            style={{
-              width: '100%',
-              height: '100%',
-              position: 'relative',
-            }}
-          />
-        )}
+        {/* Loading Spinner */}
+        <CircularProgress
+          sx={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            visibility: loading ? 'visible' : 'hidden',
+          }}
+        />
+        {/* SVG Content */}
+        <div
+          dangerouslySetInnerHTML={{ __html: svgContent }}
+          style={{
+            width: '100%',
+            height: '100%',
+            position: 'relative',
+            visibility: loading ? 'hidden' : 'visible',
+          }}
+        />
       </Box>
       <ProblemModal open={modalOpen} onClose={() => setModalOpen(false)} problems={problems} />
     </Box>
