@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import * as d3 from 'd3';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import ProblemModal from './ProblemModal';
 import Sidebar from './Sidebar';
@@ -24,7 +23,7 @@ const Treemap = () => {
   }, [filter, level, parentCode, visualizationType]);
 
   const fetchSvgData = async () => {
-    setLoading(true); // Show loading spinner
+    setLoading(true);
     try {
       const response = await fetch(`/generate_svg?level=${level}&parent_code=${parentCode}&work_request_status=${filter}&visualization_type=${visualizationType}`);
       if (!response.ok) {
@@ -36,16 +35,21 @@ const Treemap = () => {
       console.error("Error fetching SVG data:", error);
       setSvgContent(`<svg><text x="10" y="20" font-size="16" fill="red">Error: ${error.message}</text></svg>`);
     } finally {
-      setLoading(false); // Hide loading spinner once data is fetched
+      setLoading(false);
     }
   };
 
   const attachHoverHandlers = () => {
-    d3.selectAll("rect")
+    d3.selectAll("rect, path.unit-room")
       .on("mouseover", function () {
-        const rect = d3.select(this);
-        let id = rect.attr("id");
-        const className = rect.attr("class");
+        const element = d3.select(this);
+        let id = element.attr("id");
+        const className = element.attr("class");
+
+        element
+          .style("stroke", "yellow")
+          .style("stroke-width", "2px")
+          .style("cursor", "pointer");
 
         if (className === "building") {
           id = id.split(":")[1];
@@ -53,50 +57,46 @@ const Treemap = () => {
           id = id.split(":")[2];
         } else if (className === "unit") {
           id = id.split(":")[3];
+        } else if (className === "unit-room") {
+          id = id.split(";")[2];  // Make sure this correctly matches the format used in your SVG elements
         }
 
         const hoverBox = d3.select(`#hover-info-${id}`);
         hoverBox.style("visibility", "visible");
 
-        // Calculate the hover box position relative to the rect
-        const rectBBox = this.getBoundingClientRect();
+        const elementBBox = this.getBoundingClientRect();
         const boxWidth = hoverBox.node().offsetWidth;
         const boxHeight = hoverBox.node().offsetHeight;
 
-        // Determine the current width based on sidebar state
         const sidebarWidth = sidebarOpen ? 250 : 80;
         const pageWidth = window.innerWidth - sidebarWidth;
         const pageHeight = window.innerHeight;
 
-        let newX = rectBBox.left + (rectBBox.width / 2) - (boxWidth / 2); // Center horizontally above the rect
-        let newY = rectBBox.top - boxHeight - 5; // Position above the rect with a slight offset
+        let newX = elementBBox.left + (elementBBox.width / 2) - (boxWidth / 2);
+        let newY = elementBBox.top - boxHeight - 5;
 
-        // Adjust if the hover box would overflow the right edge
         if (newX + boxWidth > pageWidth) {
-          newX = pageWidth - boxWidth - 15; // Position it within the right edge
+          newX = pageWidth - boxWidth - 15;
         }
 
-        // Adjust if the hover box would overflow the left edge
         if (newX < sidebarWidth) {
-          newX = sidebarWidth + 15; // Set a minimal offset from the left edge
+          newX = sidebarWidth + 15;
         }
 
-        // Adjust if the hover box would overflow the top edge
         if (newY < 0) {
-          newY = rectBBox.bottom + 15; // Position below the rect if it's near the top edge
+          newY = elementBBox.bottom + 15;
         }
 
-        // Ensure the box doesn't go off the bottom edge
         if (newY + boxHeight > pageHeight) {
-          newY = pageHeight - boxHeight - 15; // Adjust it to stay within the bottom edge
+          newY = pageHeight - boxHeight - 15;
         }
 
         hoverBox.style("left", `${newX}px`).style("top", `${newY}px`);
       })
       .on("mouseout", function () {
-        const rect = d3.select(this);
-        let id = rect.attr("id");
-        const className = rect.attr("class");
+        const element = d3.select(this);
+        let id = element.attr("id");
+        const className = element.attr("class");
 
         if (className === "building") {
           id = id.split(":")[1];
@@ -104,7 +104,11 @@ const Treemap = () => {
           id = id.split(":")[2];
         } else if (className === "unit") {
           id = id.split(":")[3];
+        } else if (className === "unit-room") {
+          id = id.split(";")[2];
         }
+
+        element.style("stroke", null).style("stroke-width", null);
 
         d3.select(`#hover-info-${id}`).style("visibility", "hidden");
       });
@@ -118,7 +122,7 @@ const Treemap = () => {
       setLevel('building');
       setParentCode(siteId);
     });
-
+  
     d3.selectAll(".building").on("click", function () {
       const buildingId = d3.select(this).attr("id");
       setNavigationStack([...navigationStack, { level, parentCode }]);
@@ -126,7 +130,7 @@ const Treemap = () => {
       setLevel('floor');
       setParentCode(buildingId);
     });
-
+  
     d3.selectAll(".floor").on("click", function () {
       const floorId = d3.select(this).attr("id");
       setNavigationStack([...navigationStack, { level, parentCode }]);
@@ -134,9 +138,10 @@ const Treemap = () => {
       setLevel('unit');
       setParentCode(floorId);
     });
-
-    d3.selectAll(".unit").on("click", async function () {
+  
+    d3.selectAll(".unit, path.unit-room").on("click", async function () {
       const unitId = d3.select(this).attr("id");
+  
       try {
         const response = await fetch(`/get_unit_problems?unit_code=${unitId}`);
         if (!response.ok) {
@@ -179,17 +184,17 @@ const Treemap = () => {
       container.selectAll('*').remove();
       container.html(svgContent);
 
-      container.selectAll("rect").each(function () {
-        const rect = d3.select(this);
-        let id = rect.attr("id");
-        const className = rect.attr("class");
+      container.selectAll("rect, path.unit-room").each(function () {
+        const element = d3.select(this);
+        let id = element.attr("id");
+        const className = element.attr("class");
 
         if (className === "building") {
           id = id.split(":")[1];
         } else if (className === "floor") {
           id = id.split(":")[2];
-        } else if (className === "unit") {
-          id = id.split(":")[3];
+        } else if (className === "unit-room") {
+          id = id.split(";")[2];  // Match the hover handlers' split logic
         }
 
         container.append("div")
@@ -206,10 +211,44 @@ const Treemap = () => {
           .style("font-family", "'Roboto', 'Helvetica', 'Arial', sans-serif")
           .style("font-size", "1rem")
           .html(`
-            <strong>Name:</strong> ${rect.attr("data_name")}<br />
+            <strong>Name:</strong> ${element.attr("data_name")}<br />
             <strong>ID:</strong> ${id}<br />
-            <strong>Issues:</strong> ${rect.attr("data_issues")}<br />
-            <strong>Size:</strong> ${rect.attr("data_size")}
+            <strong>Issues:</strong> ${element.attr("data_issues")}<br />
+            <strong>Size:</strong> ${element.attr("data_size")}
+          `);
+      });
+
+      container.selectAll("rect, path.unit").each(function () {
+        const element = d3.select(this);
+        let id = element.attr("id");
+        const className = element.attr("class");
+
+        if (className === "building") {
+          id = id.split(":")[1];
+        } else if (className === "floor") {
+          id = id.split(":")[2];
+        } else if (className === "unit"){
+          id = id.split(":")[3];  
+        }
+
+        container.append("div")
+          .attr("id", `hover-info-${id}`)
+          .attr("class", "hover-info-box")
+          .style("visibility", "hidden")
+          .style("position", "absolute")
+          .style("background-color", "white")
+          .style("border", "1px solid #ccc")
+          .style("padding", "10px")
+          .style("border-radius", "5px")
+          .style("z-index", "10")
+          .style("pointer-events", "none")
+          .style("font-family", "'Roboto', 'Helvetica', 'Arial', sans-serif")
+          .style("font-size", "1rem")
+          .html(`
+            <strong>Name:</strong> ${element.attr("data_name")}<br />
+            <strong>ID:</strong> ${id}<br />
+            <strong>Issues:</strong> ${element.attr("data_issues")}<br />
+            <strong>Size:</strong> ${element.attr("data_size")}
           `);
       });
 
