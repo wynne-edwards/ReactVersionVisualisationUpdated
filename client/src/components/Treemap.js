@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import * as d3 from 'd3';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import useMediaQuery from '@mui/material/useMediaQuery';
 import ProblemModal from './ProblemModal';
 import Sidebar from './Sidebar';
 
@@ -17,7 +16,6 @@ const Treemap = () => {
   const [forwardStack, setForwardStack] = useState([]);
   const [visualizationType, setVisualizationType] = useState('squarified');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const isTabletOrLarger = useMediaQuery('(min-width: 600px)');
 
   useEffect(() => {
     fetchSvgData();
@@ -38,56 +36,76 @@ const Treemap = () => {
   };
 
   const attachHoverHandlers = () => {
-    d3.selectAll("rect").on("mouseover", function () {
-      const rect = d3.select(this);
-      let id = rect.attr("id");
-      const className = rect.attr("class");
-      if (className === "building") {
-        id = id.split(":")[1];
-      } else if (className === "floor") {
-        id = id.split(":")[2];
-      } else if (className === "unit") {
-        id = id.split(":")[3];
-      }
-      const hoverBox = d3.select(`#hover-info-${id}`);
-      hoverBox.style("visibility", "visible");
+    d3.selectAll("rect")
+      .on("mouseover", function () {
+        const rect = d3.select(this);
+        let id = rect.attr("id");
+        const className = rect.attr("class");
 
-      rect.on("mousemove", function (event) {
-        const [x, y] = d3.pointer(event);
+        if (className === "building") {
+          id = id.split(":")[1];
+        } else if (className === "floor") {
+          id = id.split(":")[2];
+        } else if (className === "unit") {
+          id = id.split(":")[3];
+        }
 
+        const hoverBox = d3.select(`#hover-info-${id}`);
+        hoverBox.style("visibility", "visible");
+
+        // Calculate the hover box position relative to the rect
+        const rectBBox = this.getBoundingClientRect();
         const boxWidth = hoverBox.node().offsetWidth;
         const boxHeight = hoverBox.node().offsetHeight;
-        const pageWidth = window.innerWidth;
+
+        // Determine the current width based on sidebar state
+        const sidebarWidth = sidebarOpen ? 250 : 80;
+        const pageWidth = window.innerWidth - sidebarWidth;
         const pageHeight = window.innerHeight;
 
-        let newX = x + 10;
-        let newY = y + 10;
+        let newX = rectBBox.left + (rectBBox.width / 2) - (boxWidth / 2); // Center horizontally above the rect
+        let newY = rectBBox.top - boxHeight - 5; // Position above the rect with a slight offset
 
+        // Adjust if the hover box would overflow the right edge
         if (newX + boxWidth > pageWidth) {
-          newX = x - boxWidth - 10;
+          newX = pageWidth - boxWidth - 15; // Position it within the right edge
         }
+
+        // Adjust if the hover box would overflow the left edge
+        if (newX < sidebarWidth) {
+          newX = sidebarWidth + 15; // Set a minimal offset from the left edge
+        }
+
+        // Adjust if the hover box would overflow the top edge
+        if (newY < 0) {
+          newY = rectBBox.bottom + 15; // Position below the rect if it's near the top edge
+        }
+
+        // Ensure the box doesn't go off the bottom edge
         if (newY + boxHeight > pageHeight) {
-          newY = y - boxHeight - 10;
+          newY = pageHeight - boxHeight - 15; // Adjust it to stay within the bottom edge
         }
 
         hoverBox.style("left", `${newX}px`).style("top", `${newY}px`);
-      });
+      })
+      .on("mouseout", function () {
+        const rect = d3.select(this);
+        let id = rect.attr("id");
+        const className = rect.attr("class");
 
-    }).on("mouseout", function () {
-      const rect = d3.select(this);
-      let id = rect.attr("id");
-      const className = rect.attr("class");
-      if (className === "building") {
-        id = id.split(":")[1];
-      } else if (className === "floor") {
-        id = id.split(":")[2];
-      } else if (className === "unit") {
-        id = id.split(":")[3];
-      }
-      const hoverBox = d3.select(`#hover-info-${id}`);
-      hoverBox.style("visibility", "hidden");
-    });
+        if (className === "building") {
+          id = id.split(":")[1];
+        } else if (className === "floor") {
+          id = id.split(":")[2];
+        } else if (className === "unit") {
+          id = id.split(":")[3];
+        }
+
+        d3.select(`#hover-info-${id}`).style("visibility", "hidden");
+      });
   };
+
+
 
   const attachClickHandlers = () => {
     d3.selectAll(".site").on("click", function () {
@@ -170,23 +188,26 @@ const Treemap = () => {
         } else if (className === "unit") {
           id = id.split(":")[3];
         }
-        
-        const hoverInfoBox = container.append("div")
+
+        container.append("div")
           .attr("id", `hover-info-${id}`)
           .attr("class", "hover-info-box")
           .style("visibility", "hidden")
           .style("position", "absolute")
           .style("background-color", "white")
           .style("border", "1px solid #ccc")
-          .style("padding", "5px")
+          .style("padding", "10px")
           .style("border-radius", "5px")
           .style("z-index", "10")
-          .style("pointer-events", "none");
-
-          hoverInfoBox.append("p").text(`Name: ${rect.attr("data_name")}`);
-          hoverInfoBox.append("p").text(`ID: ${id}`);
-          hoverInfoBox.append("p").text(`Issues: ${rect.attr("data_issues")}`);
-          hoverInfoBox.append("p").text(`Size: ${rect.attr("data_size")}`);
+          .style("pointer-events", "none")
+          .style("font-family", "'Roboto', 'Helvetica', 'Arial', sans-serif")
+          .style("font-size", "1rem")
+          .html(`
+            <strong>Name:</strong> ${rect.attr("data_name")}<br />
+            <strong>ID:</strong> ${id}<br />
+            <strong>Issues:</strong> ${rect.attr("data_issues")}<br />
+            <strong>Size:</strong> ${rect.attr("data_size")}
+          `);
       });
 
       attachHoverHandlers();
@@ -228,7 +249,6 @@ const Treemap = () => {
             }}
           />
         )}
-
       </Box>
       <ProblemModal open={modalOpen} onClose={() => setModalOpen(false)} problems={problems} />
     </Box>

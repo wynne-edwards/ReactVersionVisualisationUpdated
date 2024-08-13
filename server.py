@@ -348,7 +348,7 @@ def calculate_unit_size(floor, parent_code):
         
         return unit_sizes
     except FileNotFoundError:
-        print(f"Building plan not found for {parent_code}. Setting unit sizes to minimum.")
+        # print(f"Building plan not found for {parent_code}. Setting unit sizes to minimum.")
         return [(unit.unitCode, 50) for unit in floor.units]
 
 def calculate_and_add_unit_sizes(floor, parent_code):
@@ -470,11 +470,30 @@ def identify_closed_paths(paths, min_size):
 def generate_room_associations(paths, texts):
     associations = []
     for idx, (path_element, d, class_name, id_name) in enumerate(paths):
-        if idx < len(texts):
-            text_element, room_name, x, y = texts[idx]
+
+        if id_name.lower().startswith("int") or id_name.lower().startswith("ext"):
+            continue
+        # Match paths with text elements using proximity or other heuristics
+        nearest_text = None
+        min_distance = float('inf')
+
+        for text_element, room_name, x, y in texts:
+            # You can calculate the distance between the path's bounding box and the text's position
+            x0, y0, x1, y1 = get_path_bounds(d)
+            path_center_x = (x0 + x1) / 2
+            path_center_y = (y0 + y1) / 2
+            distance = math.sqrt((x - path_center_x) ** 2 + (y - path_center_y) ** 2)
+
+            if distance < min_distance:
+                min_distance = distance
+                nearest_text = (room_name, x, y)
+
+        if nearest_text:
+            room_name, x, y = nearest_text
         else:
-            room_name = f"Room {idx+1}"
-            x, y = 0, 0 
+            room_name = f"Room {idx + 1}"
+            x, y = 0, 0
+
         length = calculate_path_length(d)
         associations.append({
             "room_name": room_name,
@@ -536,15 +555,108 @@ def generate_svg():
             
             create_interactive_treemap(sites, level, output_svg_file, width, height, min_size=min_size)
         
-        # elif visualization_type == 'building-plans':
+        elif visualization_type == 'building-plans':
+            # For building plans visualization at the unit level
+            if level == 'site':
+                sites = generate_treemap_data(hierarchy)
+                min_size = min([site.get_site_size() for site in sites.values()])
+                create_interactive_treemap(sites, level, output_svg_file, width, height, min_size=min_size)
+            elif level == 'building':
+                hierarchy = df[df['SiteCode'] == parent_code]
+                sites = generate_treemap_data(hierarchy)
+                min_size = min([building.get_building_size() for site in sites.values() for building in site.buildings])
+                create_interactive_treemap(sites, level, output_svg_file, width, height, min_size=min_size)
+            elif level == 'floor':
+                site_code, building_code = parent_code.split(':')
+                hierarchy = df[(df['SiteCode'] == site_code) & (df['Building Code'] == building_code)]
+                sites = generate_treemap_data(hierarchy)
+                min_size = min([floor.get_floor_size() for site in sites.values() for building in site.buildings for floor in building.floors])
+                create_interactive_treemap(sites, level, output_svg_file, width, height, min_size=min_size)
+            elif level == 'unit':
+                site_code, building_code, floor_code = parent_code.split(':')
+                hierarchy = df[(df['SiteCode'] == site_code) & (df['Building Code'] == building_code) & (df['Floor Code'] == floor_code)]
+                sites = generate_treemap_data(hierarchy)
+                svg_file = f'../database/Architectural Drawings/{site_code}-{building_code}-{floor_code}.svg'
+                try:
+                    paths, texts, tree, root = parse_svg(svg_file)
+
+                    # Associate room paths with issue data
+                    rooms = generate_room_associations(paths, texts)
+                    
+                    # Ensure the issue counts and min_size are valid
+                    min_size = min([unit.unitSize for site in sites.values() for building in site.buildings for floor in building.floors for unit in floor.units])
+                    issue_counts = [u.issueCount for site in sites.values() for building in site.buildings for floor in building.floors for u in floor.units]
+                    
+                    if not issue_counts:
+                        print("Warning: No issue counts found. Skipping color normalization.")
+                        return "No issues found for units.", 200
+                    
+                    min_issue = min(issue_counts)
+                    max_issue = max(issue_counts)
+
+                    if min_issue > max_issue:
+                        raise ValueError("minvalue must be less than or equal to maxvalue in normalization")
+
+                    norm = plt.Normalize(min_issue, max_issue)
+
+                    for room in rooms:
+                        try:
+                            # Attempt to split the room ID by ':'
+                            id_parts = room["id"].split(";")
+                            if len(id_parts) >= 3:
+                                unit_code = id_parts[2].strip().lower()
+                            else:
+                                continue
+
+                            if unit_code.startswith("int") or unit_code.startswith("ext"):
+                                continue
+
+                            unit = next((u for site in sites.values() for building in site.buildings for floor in building.floors for u in floor.units if u.unitCode.strip().lower() == unit_code), None)
+                            if unit:
+                                color = mcolors.to_hex(plt.cm.Blues(norm(unit.issueCount)))
+
+                                # Find the corresponding path element using the known room's ID and structure
+                                room_element = None
+                                for path_elem, path_d, class_name, id_name in paths:
+                                    room_parts = id_name.split(";")
+                                    if len(room_parts) >= 3:
+                                        room_code = room_parts[2].strip().lower()
+                                    else:
+                                        continue
+                                    if room_code == unit_code:
+                                        room_element = path_elem
+                                        print(f"Found room element for unit {unit_code}")
+                                        break
+
+                                if room_element is not None:
+                                    room_element.set("fill", color)
+
+                        except ValueError as ve:
+                            print(f"Error processing room ID: {ve}")
+                            continue  # Skip to the next room if there’s an issue with the ID format
+
+                    # Write the updated SVG to the output file
+                    tree.write(output_svg_file)
+
+                except FileNotFoundError:
+                    site_code, building_code, floor_code = parent_code.split(':')
+                    hierarchy = df[(df['SiteCode'] == site_code) & (df['Building Code'] == building_code) & (df['Floor Code'] == floor_code)]
+                    sites = generate_treemap_data(hierarchy)
+                    min_size = min([unit.unitSize for site in sites.values() for building in site.buildings for floor in building.floors for unit in floor.units])
+                    create_interactive_treemap(sites, level, output_svg_file, width, height, min_size=min_size)
+            else:
+                return "Invalid level", 400
+
+
             
-        
+
         with open(output_svg_file, 'r') as f:
             svg_content = f.read()
         
         cache[cache_key] = {'svg_content': svg_content, 'filters': filters}
     
     return svg_content
+
 
 
 
