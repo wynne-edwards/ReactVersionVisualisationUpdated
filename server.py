@@ -105,19 +105,36 @@ def extract_data_from_access(filters):
         Site.[SiteName], 
         Floor.[Floor Name], 
         Unit.[Unit Name], 
-        COUNT(Combined.[Activity Log ID]) as IssueCount
-    FROM ((((Combined
+        COUNT(Combined.[Activity Log ID]) as IssueCount,
+        Combined.[Requested by],
+        Combined.[Craftsperson Code],
+        Craftsperson.[Primary Trade]
+    FROM (((((Combined
     INNER JOIN Location ON Combined.LocationID = Location.LocationID)
     INNER JOIN Unit ON Location.UnitID = Unit.UnitID)
     INNER JOIN Building ON Location.[Building Code] = Building.[Building Code])
     INNER Join Site ON Location.[Site Code] = Site.[SiteCode])
-    INNER JOIN Floor ON Location.[Floor Code] = Floor.[Floor Code]
+    INNER JOIN Floor ON Location.[Floor Code] = Floor.[Floor Code])
+    INNER JOIN Craftsperson ON Combined.[Craftsperson Code] = Craftsperson.[Craftsperson Code]
     WHERE 1=1
     """
-
-    if 'work_request_status' in filters:
-        query += f"AND Combined.[Work Request Status] = '{filters['work_request_status']}'"
-
+    
+    if 'work_request_status' in filters and filters['work_request_status']:
+        work_request_status_list = "', '".join(filters['work_request_status'])
+        query += f"AND Combined.[Work Request Status] IN ('{work_request_status_list}') "
+    
+    if 'requested_by' in filters and filters['requested_by']:
+        requested_by_list = "', '".join(filters['requested_by'])
+        query += f"AND Combined.[Requested by] IN ('{requested_by_list}') "
+    
+    if 'craftsperson_name' in filters and filters['craftsperson_name']:
+        craftsperson_name_list = "', '".join(filters['craftsperson_name'])
+        query += f"AND Craftsperson.[Craftsperson Name] IN ('{craftsperson_name_list}') "
+    
+    if 'primary_trade' in filters and filters['primary_trade']:
+        primary_trade_list = "', '".join(filters['primary_trade'])
+        query += f"AND Craftsperson.[Primary Trade] IN ('{primary_trade_list}') "
+    
     query += """
     GROUP BY 
         Location.[Building Code],
@@ -127,15 +144,20 @@ def extract_data_from_access(filters):
         Site.[SiteCode],
         Site.[SiteName],
         Floor.[Floor Name],
-        Unit.[Unit Name];
+        Unit.[Unit Name],
+        Combined.[Requested by],
+        Combined.[Craftsperson Code],
+        Craftsperson.[Primary Trade];
     """
+    
     cursor = conn.cursor()
     cursor.execute(query)
     rows = cursor.fetchall()
     conn.close()
-
+    
     df = pd.DataFrame.from_records(rows, columns=[desc[0] for desc in cursor.description])
     return df
+
 
 def generate_treemap_data(df):
     sites = {}
@@ -528,6 +550,7 @@ def generate_room_associations(paths, texts):
 def index():
     return send_from_directory(app.static_folder, 'index.html')
 
+
 @app.route('/generate_svg', methods=['GET'])
 def generate_svg():
     level = request.args.get('level')
@@ -535,12 +558,22 @@ def generate_svg():
     visualization_type = request.args.get('visualization_type', 'squarified')
     width = int(request.args.get('width', 1920))
     height = int(request.args.get('height', 930))
-
+    
     filters = {}
     work_request_status = request.args.get('work_request_status')
+    requested_by = request.args.get('requested_by')
+    craftsperson_name = request.args.get('craftsperson_name')
+    primary_trade = request.args.get('primary_trade')
+    
     if work_request_status:
         filters['work_request_status'] = work_request_status
-
+    if requested_by:
+        filters['requested_by'] = requested_by
+    if craftsperson_name:
+        filters['craftsperson_name'] = craftsperson_name
+    if primary_trade:
+        filters['primary_trade'] = primary_trade
+    
     cache_key = f"{level}-{parent_code}-{filters}-{visualization_type}"
 
     if cache_key in cache:
@@ -624,6 +657,50 @@ def clear_cache():
     for key in keys_to_delete:
         del cache[key]
     return "Cache cleared", 200
+
+@app.route('/get_filter_options', methods=['GET'])
+def get_filter_options():
+    conn_str = (
+        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+        r'DBQ=' + database_file + ';'
+    )
+    conn = pyodbc.connect(conn_str)
+    cursor = conn.cursor()
+
+    options = {
+        'work_request_status': [],
+        'requested_by': [],
+        'craftsperson_name': [],
+        'primary_trade': []
+    }
+
+    try:
+        # Fetch options for work_request_status
+        cursor.execute("SELECT DISTINCT [Work Request Status] FROM Combined")
+        options['work_request_status'] = [row[0] for row in cursor.fetchall()]
+
+        # Fetch options for requested_by
+        cursor.execute("SELECT DISTINCT [Requested by] FROM Combined")
+        options['requested_by'] = [row[0] for row in cursor.fetchall()]
+
+        # Fetch options for craftsperson_name
+        cursor.execute("SELECT DISTINCT [Craftsperson Name] FROM Craftsperson")
+        options['craftsperson_name'] = [row[0] for row in cursor.fetchall()]
+
+        # Fetch options for primary_trade
+        cursor.execute("SELECT DISTINCT [Primary Trade] FROM Craftsperson")
+        options['primary_trade'] = [row[0] for row in cursor.fetchall()]
+
+    except pyodbc.Error as e:
+        error_message = f"Database query error: {str(e)}"
+        print(error_message)
+        return error_message, 500
+    finally:
+        conn.close()
+
+    return jsonify(options)
+
+
 
 @app.route('/get_unit_problems', methods=['GET'])
 def get_unit_problems():

@@ -9,7 +9,8 @@ const Treemap = () => {
   const [svgContent, setSvgContent] = useState('');
   const [problems, setProblems] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState({});
+  const [filterOptions, setFilterOptions] = useState({});
   const [level, setLevel] = useState('site');
   const [parentCode, setParentCode] = useState('');
   const [navigationStack, setNavigationStack] = useState([]);
@@ -19,13 +20,27 @@ const Treemap = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    fetchFilterOptions();
     fetchSvgData();
   }, [filter, level, parentCode, visualizationType]);
+
+  const fetchFilterOptions = async () => {
+    try {
+      const response = await fetch('/get_filter_options');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch filter options: ${response.statusText}`);
+      }
+      const options = await response.json();
+      setFilterOptions(options);
+    } catch (error) {
+      console.error("Error fetching filter options:", error);
+    }
+  };
 
   const fetchSvgData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/generate_svg?level=${level}&parent_code=${parentCode}&work_request_status=${filter}&visualization_type=${visualizationType}`);
+      const response = await fetch(`/generate_svg?level=${level}&parent_code=${parentCode}&work_request_status=${filter.work_request_status || ''}&requested_by=${filter.requested_by || ''}&craftsperson_name=${filter.craftsperson_name || ''}&primary_trade=${filter.primary_trade || ''}&visualization_type=${visualizationType}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch SVG data: ${response.statusText}`);
       }
@@ -139,7 +154,7 @@ const Treemap = () => {
       setParentCode(floorId);
     });
 
-    d3.selectAll(".unit, .unit-room").on("click", async function () {
+    d3.selectAll(".unit").on("click", async function () {
       const unitId = d3.select(this).attr("id");
       try {
         const response = await fetch(`/get_unit_problems?unit_code=${unitId}`);
@@ -183,7 +198,7 @@ const Treemap = () => {
       container.selectAll('*').remove();
       container.html(svgContent);
 
-      container.selectAll("rect, path.unit-room, path.unit").each(function () {
+      container.selectAll("rect, path.unit-room").each(function () {
         const element = d3.select(this);
         let id = element.attr("id");
         const className = element.attr("class");
@@ -192,8 +207,8 @@ const Treemap = () => {
           id = id.split(":")[1];
         } else if (className === "floor") {
           id = id.split(":")[2];
-        } else if (className === "unit" || className === "unit-room") {
-          id = id.split(";")[2] || id.split(":")[3]; 
+        } else if (className === "unit-room") {
+          id = id.split(";")[2];
         }
 
         container.append("div")
@@ -210,7 +225,7 @@ const Treemap = () => {
           .style("font-family", "'Roboto', 'Helvetica', 'Arial', sans-serif")
           .style("font-size", "1rem")
           .html(`
-            <strong>ID:</strong> ${element.attr("data_name")}<br />
+            <strong>Name:</strong> ${element.attr("data_name")}<br />
             <strong>ID:</strong> ${id}<br />
             <strong>Issues:</strong> ${element.attr("data_issues")}<br />
             <strong>Size:</strong> ${element.attr("data_size")}
@@ -227,6 +242,7 @@ const Treemap = () => {
       <Sidebar
         filter={filter}
         setFilter={setFilter}
+        filterOptions={filterOptions} // Pass filter options to the Sidebar
         visualizationType={visualizationType}
         setVisualizationType={setVisualizationType}
         handleBack={handleBack}
@@ -234,6 +250,7 @@ const Treemap = () => {
         canGoBack={navigationStack.length > 0}
         canGoForward={forwardStack.length > 0}
         sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
       />
       <Box
         id="treemap"
@@ -265,7 +282,7 @@ const Treemap = () => {
           }}
         />
       </Box>
-      <ProblemModal open={modalOpen} handleClose={() => setModalOpen(false)} problems={problems} />
+      <ProblemModal open={modalOpen} onClose={() => setModalOpen(false)} problems={problems} />
     </Box>
   );
 };

@@ -1,111 +1,115 @@
 import React, { useState } from 'react';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
-import Collapse from '@mui/material/Collapse';
-import FormControl from '@mui/material/FormControl';
-import InputLabel from '@mui/material/InputLabel';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
-import Switch from '@mui/material/Switch';
-import FormControlLabel from '@mui/material/FormControlLabel';
+import {
+  Button,
+  Box,
+  Popover,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableRow,
+  Checkbox,
+  Typography,
+  Paper,
+} from '@mui/material';
 
-const Sidebar = ({ filter, setFilter, visualizationType, setVisualizationType, handleBack, handleForward, canGoBack, canGoForward }) => {
-  const [open, setOpen] = useState(true);
+const Sidebar = ({ filter, setFilter, filterOptions, handleBack, handleForward, canGoBack, canGoForward }) => {
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [currentFilterKey, setCurrentFilterKey] = useState('');
 
-  const handleToggle = () => {
-    setOpen(!open);
+  const handleButtonClick = (event, filterKey) => {
+    setAnchorEl(event.currentTarget);
+    setCurrentFilterKey(filterKey);
   };
 
-  const handleFilterChange = (event) => {
-    setFilter(event.target.value);
+  const handleClose = () => {
+    setAnchorEl(null);
+    setCurrentFilterKey('');
   };
 
-  const handleVisualizationTypeChange = (event) => {
-    setVisualizationType(event.target.checked ? 'building-plans' : 'squarified');
+  const handleCheckboxChange = (key, value) => {
+    setFilter(prev => ({
+      ...prev,
+      [key]: prev[key]?.includes(value)
+        ? prev[key].filter(v => v !== value)
+        : [...(prev[key] || []), value],
+    }));
   };
+
+  const renderFilterPopover = (filterKey, options) => (
+    <Popover
+      open={Boolean(anchorEl && currentFilterKey === filterKey)}
+      anchorEl={anchorEl}
+      onClose={handleClose}
+      anchorOrigin={{
+        vertical: 'center',
+        horizontal: 'right',
+      }}
+      transformOrigin={{
+        vertical: 'center',
+        horizontal: 'left',
+      }}
+    >
+      <Paper sx={{ padding: '16px', maxWidth: '300px' }}>
+        <Typography variant="h6" gutterBottom>
+          {filterKey.replace('_', ' ')}
+        </Typography>
+        <TableContainer>
+          <Table>
+            <TableBody>
+              {options.map((option, index) => (
+                <TableRow key={index}>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={filter[filterKey]?.includes(option) || false}
+                      onChange={() => handleCheckboxChange(filterKey, option)}
+                    />
+                  </TableCell>
+                  <TableCell>{option}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+    </Popover>
+  );
 
   return (
-    <Box sx={{ width: open ? 250 : 80, bgcolor: 'grey.200', height: '100%', zIndex: 1000, transition: 'width 0.3s', position: 'relative' }}>
-      <Button onClick={handleToggle} sx={{ width: '100%', marginBottom: 2 }}>
-        {open ? 'Collapse' : 'Expand'}
+    <Box sx={{ display: 'flex', flexDirection: 'column', width: 250, padding: '16px' }}>
+      {/* Back and Forward Buttons */}
+      <Button disabled={!canGoBack} onClick={handleBack} sx={{ mb: 2 }} variant="contained">
+        Back
       </Button>
-      <Collapse in={open}>
-        <Box sx={{ padding: 2 }}>
-          <Typography variant="h6">Settings</Typography>
-          
-          <FormControl variant="outlined" sx={{ minWidth: 120, marginTop: 2 }}>
-            <InputLabel id="filter-label">Filter</InputLabel>
-            <Select
-              labelId="filter-label"
-              id="filter"
-              value={filter}
-              onChange={handleFilterChange}
-              label="Filter"
-            >
-              <MenuItem value=""><em>All</em></MenuItem>
-              <MenuItem value="Closed">Closed</MenuItem>
-              <MenuItem value="Completed">Completed</MenuItem>
-              <MenuItem value="Cancelled">Cancelled</MenuItem>
-              <MenuItem value="Assigned to Work Order">Assigned to Work Order</MenuItem>
-              <MenuItem value="Issued and In Process">Issued and In Process</MenuItem>
-              <MenuItem value="On Hold for Access">On Hold for Access</MenuItem>
-              <MenuItem value="On Hold for Parts">On Hold for Parts</MenuItem>
-              <MenuItem value="On Hold for Labor">On Hold for Labor</MenuItem>
-              <MenuItem value="Requested">Requested</MenuItem>
-              <MenuItem value="Stopped">Stopped</MenuItem>
-            </Select>
-          </FormControl>
+      <Button disabled={!canGoForward} onClick={handleForward} sx={{ mb: 2 }} variant="contained">
+        Forward
+      </Button>
 
-          <FormControlLabel
-            control={<Switch checked={visualizationType === 'building-plans'} onChange={handleVisualizationTypeChange} />}
-            label="Building Plans"
-            sx={{ marginTop: 2 }}
-          />
-
-          {open && (
-            <>
-              <Button
-                onClick={handleBack}
-                sx={{ width: '100%', marginTop: 2 }}
-                variant="contained"
-                disabled={!canGoBack}
-              >
-                Back
-              </Button>
-
-              <Button
-                onClick={handleForward}
-                sx={{ width: '100%', marginTop: 2 }}
-                variant="contained"
-                disabled={!canGoForward}
-              >
-                Forward
-              </Button>
-            </>
-          )}
-        </Box>
-      </Collapse>
-
-      {!open && (
+      {/* Filter Buttons */}
+      {filterOptions.work_request_status && (
         <>
-          <Button
-            onClick={handleBack}
-            sx={{ position: 'absolute', bottom: 10, left: 10, zIndex: 1000, marginRight: 2}}
-            variant="contained"
-            disabled={!canGoBack}
-          >
-            Back
+          <Button variant="outlined" onClick={(e) => handleButtonClick(e, 'work_request_status')} sx={{ mb: 2 }}>
+            Work Request Status
           </Button>
+          {renderFilterPopover('work_request_status', filterOptions.work_request_status)}
+        </>
+      )}
 
-          <Button
-            onClick={handleForward}
-            sx={{ position: 'absolute', bottom: 10, left: 90, zIndex: 1000 }}
-            variant="contained"
-            disabled={!canGoForward}
-          >
-            Forward
+      {filterOptions.craftsperson_name && (
+        <>
+          <Button variant="outlined" onClick={(e) => handleButtonClick(e, 'craftsperson_name')} sx={{ mb: 2 }}>
+            Craftsperson Name
           </Button>
+          {renderFilterPopover('craftsperson_name', filterOptions.craftsperson_name)}
+        </>
+      )}
+
+      {filterOptions.primary_trade && (
+        <>
+          <Button variant="outlined" onClick={(e) => handleButtonClick(e, 'primary_trade')} sx={{ mb: 2 }}>
+            Primary Trade
+          </Button>
+          {renderFilterPopover('primary_trade', filterOptions.primary_trade)}
         </>
       )}
     </Box>
