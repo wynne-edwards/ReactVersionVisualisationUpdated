@@ -923,13 +923,15 @@ def get_unit_problems():
     craftsperson_name = request.args.get("craftsperson_name")
     primary_trade = request.args.get("primary_trade")
 
+    print("Unit code: ", code)
+
     if not code:
         return "Unit code is required", 400
     
     site_code = ""
     if (len(code.split(":"))==4):
         site_code, building_code, floor_code, unit_code = code.split(":")
-    elif (len(code.split(":"))==3):
+    elif (len(code.split(";"))==3):
         building_code, floor_code, unit_code = code.split(";")
     
     conn_str = (

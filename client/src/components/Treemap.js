@@ -170,11 +170,10 @@ const Treemap = () => {
 
     d3.selectAll(".unit, .unit-room").on("click", async function () {
       const element = d3.select(this);
-      let id = element.attr("id");
-      const className = element.attr("class");
+      let old_id = element.attr("id");
   
       try {
-        const response = await fetch(`/get_unit_problems?unit_code=${id}&work_request_status=${selectedFilters.work_request_status.join(',')}&craftsperson_name=${selectedFilters.craftsperson_name.join(',')}&primary_trade=${selectedFilters.primary_trade.join(',')}`);
+        const response = await fetch(`/get_unit_problems?unit_code=${old_id}&work_request_status=${selectedFilters.work_request_status.join(',')}&craftsperson_name=${selectedFilters.craftsperson_name.join(',')}&primary_trade=${selectedFilters.primary_trade.join(',')}`);
         if (!response.ok) {
           const errorText = await response.text();
           console.error("Error fetching problems:", errorText);
