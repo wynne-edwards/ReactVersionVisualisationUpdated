@@ -1,56 +1,70 @@
-import React, { useEffect, useState } from 'react';
-import * as d3 from 'd3';
-import Box from '@mui/material/Box';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import CircularProgress from '@mui/material/CircularProgress';
-import ProblemModal from './ProblemModal';
+import Box from '@mui/material/Box';
 import Sidebar from './Sidebar';
+import ProblemModal from './ProblemModal'; // Import the ProblemModal component
+import * as d3 from 'd3';
 
 const Treemap = () => {
   const [svgContent, setSvgContent] = useState('');
-  const [problems, setProblems] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [filter, setFilter] = useState({});
-  const [filterOptions, setFilterOptions] = useState({});
-  const [level, setLevel] = useState('site');
-  const [parentCode, setParentCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [filterOptions, setFilterOptions] = useState({
+    work_request_status: [],
+    craftsperson_name: [],
+    primary_trade: [],
+  });
+  const [selectedFilters, setSelectedFilters] = useState({
+    work_request_status: [],
+    craftsperson_name: [],
+    primary_trade: [],
+  });
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [visualizationType, setVisualizationType] = useState('squarified');
   const [navigationStack, setNavigationStack] = useState([]);
   const [forwardStack, setForwardStack] = useState([]);
-  const [visualizationType, setVisualizationType] = useState('squarified');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [level, setLevel] = useState('site');
+  const [parentCode, setParentCode] = useState('');
 
-  useEffect(() => {
-    fetchFilterOptions();
-    fetchSvgData();
-  }, [filter, level, parentCode, visualizationType]);
-
-  const fetchFilterOptions = async () => {
-    try {
-      const response = await fetch('/get_filter_options');
-      if (!response.ok) {
-        throw new Error(`Failed to fetch filter options: ${response.statusText}`);
-      }
-      const options = await response.json();
-      setFilterOptions(options);
-    } catch (error) {
-      console.error("Error fetching filter options:", error);
-    }
-  };
+  // State for ProblemModal
+  const [modalOpen, setModalOpen] = useState(false);
+  const [problems, setProblems] = useState([]);
 
   const fetchSvgData = async () => {
     setLoading(true);
+    setError('');
     try {
-      const response = await fetch(`/generate_svg?level=${level}&parent_code=${parentCode}&work_request_status=${filter.work_request_status || ''}&requested_by=${filter.requested_by || ''}&craftsperson_name=${filter.craftsperson_name || ''}&primary_trade=${filter.primary_trade || ''}&visualization_type=${visualizationType}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch SVG data: ${response.statusText}`);
+      const response = await axios.get('/generate_svg', {
+        params: {
+          level,
+          parent_code: parentCode,
+          visualization_type: visualizationType,
+          work_request_status: selectedFilters.work_request_status.join(','),
+          craftsperson_name: selectedFilters.craftsperson_name.join(','),
+          primary_trade: selectedFilters.primary_trade.join(',')
+        }
+      });
+      setSvgContent(response.data);
+    } catch (err) {
+      console.error('Error fetching SVG data:', err);
+      if (err.response && err.response.status === 404) {
+        setError('No data found for the selected filters.');
+      } else {
+        setError('An error occurred while fetching the data.');
       }
-      const text = await response.text();
-      setSvgContent(text);
-    } catch (error) {
-      console.error("Error fetching SVG data:", error);
-      setSvgContent(`<svg><text x="10" y="20" font-size="16" fill="red">Error: ${error.message}</text></svg>`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchFilterOptions = async () => {
+    try {
+      const response = await axios.get('/get_filter_options');
+      setFilterOptions(response.data);
+    } catch (err) {
+      console.error('Failed to fetch filter options', err);
     }
   };
 
@@ -154,19 +168,25 @@ const Treemap = () => {
       setParentCode(floorId);
     });
 
-    d3.selectAll(".unit").on("click", async function () {
-      const unitId = d3.select(this).attr("id");
+    d3.selectAll(".unit, .unit-room").on("click", async function () {
+      const element = d3.select(this);
+      let id = element.attr("id");
+      const className = element.attr("class");
+  
       try {
-        const response = await fetch(`/get_unit_problems?unit_code=${unitId}`);
+        const response = await fetch(`/get_unit_problems?unit_code=${id}&work_request_status=${selectedFilters.work_request_status.join(',')}&craftsperson_name=${selectedFilters.craftsperson_name.join(',')}&primary_trade=${selectedFilters.primary_trade.join(',')}`);
         if (!response.ok) {
           const errorText = await response.text();
           console.error("Error fetching problems:", errorText);
-          setProblems([]);
           return;
         }
         const problems = await response.json();
-        setProblems(problems);
-        setModalOpen(true);
+        if (problems && problems.length > 0) {
+          setProblems(problems);
+          setModalOpen(true);
+        } else {
+          setProblems([]);
+        }
       } catch (error) {
         console.error("Error fetching problems:", error);
       }
@@ -192,13 +212,18 @@ const Treemap = () => {
   };
 
   useEffect(() => {
+    fetchFilterOptions();
+    fetchSvgData();
+  }, [selectedFilters, visualizationType, level, parentCode]);
+
+  useEffect(() => {
     if (svgContent) {
       const container = d3.select("#treemap");
 
       container.selectAll('*').remove();
       container.html(svgContent);
 
-      container.selectAll("rect, path.unit-room").each(function () {
+      container.selectAll("rect, path.unit-room, path.unit").each(function () {
         const element = d3.select(this);
         let id = element.attr("id");
         const className = element.attr("class");
@@ -207,8 +232,8 @@ const Treemap = () => {
           id = id.split(":")[1];
         } else if (className === "floor") {
           id = id.split(":")[2];
-        } else if (className === "unit-room") {
-          id = id.split(";")[2];
+        } else if (className === "unit" || className === "unit-room") {
+          id = id.split(";")[2] || id.split(":")[3]; 
         }
 
         container.append("div")
@@ -238,51 +263,44 @@ const Treemap = () => {
   }, [svgContent]);
 
   return (
-    <Box sx={{ display: 'flex', width: '100vw', height: '100vh' }}>
+    <Box sx={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       <Sidebar
-        filter={filter}
-        setFilter={setFilter}
-        filterOptions={filterOptions} // Pass filter options to the Sidebar
-        visualizationType={visualizationType}
-        setVisualizationType={setVisualizationType}
+        filter={selectedFilters}
+        setFilter={setSelectedFilters}
+        filterOptions={filterOptions}
         handleBack={handleBack}
         handleForward={handleForward}
         canGoBack={navigationStack.length > 0}
         canGoForward={forwardStack.length > 0}
+        visualizationType={visualizationType}
+        setVisualizationType={setVisualizationType}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
       <Box
-        id="treemap"
         sx={{
           flexGrow: 1,
           transition: 'margin-left 0.3s',
-          width: sidebarOpen ? 'calc(100vw - 250px)' : 'calc(100vw - 80px)',
-          height: '100%',
           position: 'relative',
           overflow: 'hidden',
         }}
       >
-        <CircularProgress
-          sx={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            visibility: loading ? 'visible' : 'hidden',
-          }}
-        />
-        <div
-          dangerouslySetInnerHTML={{ __html: svgContent }}
-          style={{
-            width: '100%',
-            height: '100%',
-            position: 'relative',
-            visibility: loading ? 'hidden' : 'visible',
-          }}
-        />
+        {loading ? (
+          <CircularProgress sx={{ position: 'absolute', top: '50%', left: '40%', transform: 'translate(-50%, -50%)' }} />
+        ) : error ? (
+          <div style={{ color: 'red', textAlign: 'center', marginTop: '20px' }}>{error}</div>
+        ) : (
+          <div id="treemap"
+            dangerouslySetInnerHTML={{ __html: svgContent }}
+            style={{ width: '100%', height: '100%', position: 'relative' }}
+          />
+        )}
       </Box>
-      <ProblemModal open={modalOpen} onClose={() => setModalOpen(false)} problems={problems} />
+      <ProblemModal
+        open={modalOpen}
+        handleClose={() => setModalOpen(false)}
+        problems={problems}
+      />
     </Box>
   );
 };
