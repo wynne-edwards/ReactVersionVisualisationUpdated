@@ -12,6 +12,13 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
 
+/**
+ * Problem modal is a modal that displays a list of problems for a selected unit, the problems are fetched from the server based on the unit code as seen in Treemap.js
+ * @param {*} open A state that determines if the modal is open or not
+ * @param {*} handleClose A function that closes the modal
+ * @param {*} problems The problems that are passed to the modal to be displayed
+ * @returns 
+ */
 const ProblemModal = ({ open, handleClose, problems }) => {
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>

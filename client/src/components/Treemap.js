@@ -6,6 +6,10 @@ import Sidebar from './Sidebar';
 import ProblemModal from './ProblemModal'; // Import the ProblemModal component
 import * as d3 from 'd3';
 
+/**
+ * Treemap is the main code that handles displaying the visualisation and all its parts, it shows the treemap and the sidebar with all the filters and navigation buttons.
+ * @returns 
+ */
 const Treemap = () => {
   const [svgContent, setSvgContent] = useState('');
   const [loading, setLoading] = useState(false);
@@ -29,18 +33,19 @@ const Treemap = () => {
   const [forwardStack, setForwardStack] = useState([]);
   const [level, setLevel] = useState('site');
   const [parentCode, setParentCode] = useState('');
-
-  // State for ProblemModal
   const [modalOpen, setModalOpen] = useState(false);
   const [problems, setProblems] = useState([]);
 
+  /**
+   * Handing communication for the main treemap visualisation and passing variables back and forth.
+   */
   const fetchSvgData = async () => {
     setLoading(true);
     setError('');
     try {
-      console.log(selectedFilters.time_to_complete.join(',')); // Debugging line
+      console.log(selectedFilters.time_to_complete.join(','));
       const response = await axios.get('/generate_svg', {
-        params: {
+        params: { //Different filters
           level,
           parent_code: parentCode,
           visualization_type: visualizationType,
@@ -63,6 +68,9 @@ const Treemap = () => {
     }
   };
 
+  /**
+   * Calls the backend for the filter options so that the user can filter the data based on actual available options.
+   */
   const fetchFilterOptions = async () => {
     try {
       const response = await axios.get('/get_filter_options');
@@ -72,6 +80,11 @@ const Treemap = () => {
     }
   };
 
+  /**
+   * Handles the change of the filters and updates the selected filters to be passed to the backend.
+   * @param {*} filterType Which filter should be updated
+   * @param {*} value The value that the filter is carrying.
+   */
   const handleFilterChange = (filterType, value) => {
     setSelectedFilters((prevFilters) => {
       const currentValues = prevFilters[filterType];
@@ -79,7 +92,7 @@ const Treemap = () => {
         ? currentValues.filter((v) => v !== value)
         : [...currentValues, value];
       
-      console.log(`Updated Filters for ${filterType}:`, updatedFilters); // Debugging line
+      console.log(`Updated Filters for ${filterType}:`, updatedFilters); 
 
       return {
         ...prevFilters,
@@ -88,6 +101,9 @@ const Treemap = () => {
     });
   };
 
+  /**
+   * Handlers to attach hover to the SVG elements to allow for a hover info box and highlight effects.
+   */
   const attachHoverHandlers = () => {
     d3.selectAll("rect, path.unit-room")
       .on("mouseover", function () {
@@ -100,13 +116,13 @@ const Treemap = () => {
           .style("stroke-width", "2px")
           .style("cursor", "pointer");
 
-        if (className === "building") {
+        if (className === "building") { //As codes are passed as a parent code, ie RU00001:B14:F1:G0002, we need to split the code to get the correct id for the different groups
           id = id.split(":")[1];
         } else if (className === "floor") {
           id = id.split(":")[2];
         } else if (className === "unit") {
           id = id.split(":")[3];
-        } else if (className === "unit-room") {
+        } else if (className === "unit-room") { //Building plan id does not include a precinct code so it only has 3 parts B14:F1:G0002
           id = id.split(";")[2];
         }
 
@@ -117,7 +133,7 @@ const Treemap = () => {
         const boxWidth = hoverBox.node().offsetWidth;
         const boxHeight = hoverBox.node().offsetHeight;
 
-        const sidebarWidth = sidebarOpen ? 250 : 80;
+        const sidebarWidth = sidebarOpen ? 250 : 80; //Handles the collapse for the sidebar.
         const pageWidth = window.innerWidth - sidebarWidth;
         const pageHeight = window.innerHeight;
 
@@ -140,7 +156,7 @@ const Treemap = () => {
           newY = pageHeight - boxHeight - 15;
         }
 
-        hoverBox.style("left", `${newX}px`).style("top", `${newY}px`);
+        hoverBox.style("left", `${newX}px`).style("top", `${newY}px`); //Sets the position of the hover box so it never overflows the screen, code above handles logic.
       })
       .on("mouseout", function () {
         const element = d3.select(this);
@@ -163,10 +179,13 @@ const Treemap = () => {
       });
   };
 
-  const attachClickHandlers = () => {
+  /**
+   * Click handlers for the different levels to allow for navigation through the different levels.
+   */
+  const attachClickHandlers = () => { 
     d3.selectAll(".site").on("click", function () {
       const siteId = d3.select(this).attr("id");
-      setNavigationStack([...navigationStack, { level, parentCode }]);
+      setNavigationStack([...navigationStack, { level, parentCode }]); //A stack that manages the navigation history to allow for back and forward buttons.
       setForwardStack([]);
       setLevel('building');
       setParentCode(siteId);
@@ -193,7 +212,8 @@ const Treemap = () => {
       let id = element.attr("id");
       const className = element.attr("class");
   
-      try {
+      try { //On the unit level a modal appears displaying all the descriptions and activity code for each problem related to that specific room.
+        // the code below calls a backend SQL query to populate this modal with the different problems.
         const response = await fetch(`/get_unit_problems?unit_code=${id}&work_request_status=${selectedFilters.work_request_status.join(',')}&craftsperson_name=${selectedFilters.craftsperson_name.join(',')}&primary_trade=${selectedFilters.primary_trade.join(',')}&time_to_complete=${selectedFilters.time_to_complete.join(',')}`);
         if (!response.ok) {
           const errorText = await response.text();
@@ -213,6 +233,9 @@ const Treemap = () => {
     });
   };
 
+  /**
+   * Logic for back and forward buttons
+   */
   const handleBack = () => {
     if (navigationStack.length > 0) {
       const previousState = navigationStack.pop();
@@ -221,7 +244,9 @@ const Treemap = () => {
       setParentCode(previousState.parentCode);
     }
   };
-
+  /**
+   * Logic for back and forward buttons
+   */
   const handleForward = () => {
     if (forwardStack.length > 0) {
       const nextState = forwardStack.shift();
@@ -231,11 +256,17 @@ const Treemap = () => {
     }
   };
 
+  /**
+   * useEffect to handle the fetching of the filter options and the SVG data when the selected filters change.
+   */
   useEffect(() => {
     fetchFilterOptions();
     fetchSvgData();
   }, [selectedFilters, visualizationType, level, parentCode]);
 
+  /**
+   * useEffect to handle the rendering of the SVG content and attaching the hover and click handlers, ie the hover boxes
+   */
   useEffect(() => {
     if (svgContent) {
       const container = d3.select("#treemap");
@@ -248,12 +279,13 @@ const Treemap = () => {
         let id = element.attr("id");
         const className = element.attr("class");
 
+        // Different levels have different id formats, so we need to split the id to get the correct id for the different groups. RU00001:B14:F1:G0002
         if (className === "building") {
           id = id.split(":")[1];
         } else if (className === "floor") {
           id = id.split(":")[2];
-        } else if (className === "unit" || className === "unit-room") {
-          id = id.split(";")[2] || id.split(":")[3]; 
+        } else if (className === "unit" || className === "unit-room") { // Building plan id does not include a precinct code so it only has 3 parts B14;F1;G0002
+          id = id.split(";")[2] || id.split(":")[3];
         }
 
         container.append("div")
@@ -282,6 +314,9 @@ const Treemap = () => {
     }
   }, [svgContent]);
 
+  /**
+   * Logic to render all the elements on the page and their relevent css and html.
+   */
   return (
     <Box sx={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       <Sidebar

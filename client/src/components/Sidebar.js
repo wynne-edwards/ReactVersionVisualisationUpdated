@@ -15,6 +15,21 @@ import {
   FormControlLabel,
 } from '@mui/material';
 
+/**
+ * The sidebar component is used to display the filter options and visualization type toggle as well as forward and back buttons.
+ * @param {*} filter - The current filter object
+ * @param {*} setFilter - The function to update the filter object
+ * @param {*} filterOptions - The filter options object
+ * @param {*} handleBack - The function to handle the back button click
+ * @param {*} handleForward - The function to handle the forward button click
+ * @param {*} canGoBack - A boolean indicating if the back button should be disabled
+ * @param {*} canGoForward - A boolean indicating if the forward button should be disabled
+ * @param {*} visualizationType - The current visualization type
+ * @param {*} setVisualizationType - The function to update the visualization type
+ * @param {*} sidebarOpen - A boolean indicating if the sidebar is open
+ * @param {*} setSidebarOpen - The function to update the sidebar open state
+ * @returns 
+ */
 const Sidebar = ({ filter, setFilter, filterOptions, handleBack, handleForward, canGoBack, canGoForward, visualizationType, setVisualizationType, sidebarOpen, setSidebarOpen }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [currentFilterKey, setCurrentFilterKey] = useState('');
@@ -29,6 +44,11 @@ const Sidebar = ({ filter, setFilter, filterOptions, handleBack, handleForward, 
     setCurrentFilterKey('');
   };
 
+  /**
+   * Handles the updates for the different checkboxes in the filter options.
+   * @param {*} key - The key of the filter
+   * @param {*} value - The value of the filter
+   */
   const handleCheckboxChange = (key, value) => {
     setFilter(prev => ({
       ...prev,
@@ -38,6 +58,12 @@ const Sidebar = ({ filter, setFilter, filterOptions, handleBack, handleForward, 
     }));
   };
 
+  /**
+   * Renderer for showing the different options a filter has as a popup when the filter button is clicked.
+   * @param {*} filterKey - The key of the filter
+   * @param {*} options - The options for the filter
+   * @returns 
+   */
   const renderFilterPopover = (filterKey, options) => (
     <Popover
       open={Boolean(anchorEl && currentFilterKey === filterKey)}
@@ -77,6 +103,9 @@ const Sidebar = ({ filter, setFilter, filterOptions, handleBack, handleForward, 
     </Popover>
   );
 
+  /**
+   * The sidebar component is used to display the filter options and visualization type toggle as well as forward and back buttons.
+   */
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', width: sidebarOpen ? 250 : 80, padding: '16px', transition: 'width 0.3s' }}>
       {/* Collapse Button */}

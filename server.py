@@ -10,6 +10,7 @@ import squarify
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
 app = Flask(__name__, static_folder="client/build", static_url_path="")
 
 database_file = (
@@ -99,6 +100,14 @@ class Unit:
 
 
 def extract_data_from_access(filters):
+    """
+    Extract data from the Access database based on the specified filters.
+
+    :param: filters - A dictionary containing the filters to be applied to the data.
+
+    :return: A DataFrame containing the extracted data.
+    """
+    
     conn_str = (
         r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
         r'DBQ=' + database_file + ';'
@@ -176,6 +185,13 @@ def extract_data_from_access(filters):
 
 
 def generate_treemap_data(df):
+    """
+    Populates the classes with their hierarchical subclasses and calculates the sizes of the units through the help of multithreading for increased speed.
+
+    :param: df -  The DataFrame containing the data to be used for generating the treemap.
+
+    :return: sites - A class that contains the subclasses of building, floor & unit with their respective attributes as found in the classes.
+    """
     sites = {}
     for _, row in df.iterrows():
         siteCode = row["SiteCode"]
@@ -224,6 +240,14 @@ def generate_treemap_data(df):
 
 
 def generate_color_scale(df, column="IssueCount"):
+    """
+    Generates a color scale for the specified column in the DataFrame. based on the IssueCount column by default.
+    
+    :param: df - The DataFrame containing the data to be used for generating the color scale.
+    :param: column - The column in the DataFrame to be used for generating the color scale. Defaults to IssueCount
+
+    :return: df -The DataFrame with the color scale generated for the specified column.
+    """
     # Convert the specified column to numeric, forcing errors to NaN
     df[column] = pd.to_numeric(df[column], errors="coerce")
 
@@ -243,6 +267,14 @@ def generate_color_scale(df, column="IssueCount"):
 
 
 def create_building_plan_visualization(sites, svg_file, output_file, norm):
+    """
+    Creates a building plan visualization based on the specified SVG file and the data from the sites. Different from create_interactive_treemap in that it colors the units in the **building plan** instead of a squarified treemap
+    
+    :param: sites - A class that contains the subclasses of building, floor & unit with their respective attributes as found in the classes.
+    :param: svg_file - The path to the SVG file containing the building plan.
+    :param: output_file - The path to the output SVG file to be generated.
+    :param: norm - The color normalization function to be used for coloring the units based on the issue count.
+"""
     paths, texts, tree, root = parse_svg(svg_file)
     rooms = generate_room_associations(paths, texts)
 
@@ -288,6 +320,16 @@ def create_building_plan_visualization(sites, svg_file, output_file, norm):
 
 
 def create_interactive_treemap(sites, level, output_file, width, height, min_size=200):
+    """
+    Creates an interactive squarified treemap visualization based on the specified sites and level.
+
+    :param: sites - A class that contains the subclasses of building, floor & unit with their respective attributes as found in the classes.
+    :param: level - The level of the treemap to be generated. Can be one of 'site', 'building', 'floor', or 'unit'.
+    :param: output_file - The path to the output SVG file to be generated.
+    :param: width - The width of the SVG file to be generated.
+    :param: height - The height of the SVG file to be generated.
+    :param: min_size - The minimum size of the treemap squares. Defaults to 200.
+    """
     svg_ns = "http://www.w3.org/2000/svg"
     ET.register_namespace("", svg_ns)
 
@@ -459,6 +501,14 @@ def create_interactive_treemap(sites, level, output_file, width, height, min_siz
 
 # Calculate the size of a unit based on the building plan
 def calculate_unit_size(floor, parent_code):
+    """
+    Calculates the size of a unit based on the size of the unit in the building plan. This flows up as it effects the size of the floor, building, and site.
+    
+    :param: floor - The floor object containing the units to be sized.
+    :param: parent_code - The parent code of the floor to be used for finding the building plan.
+    
+    :return unit_sizes:  - A list of tuples containing the unit code and the calculated size of the unit."""
+
     site_code, building_code, floor_code = parent_code.split(":")
 
     try:
@@ -511,6 +561,13 @@ def calculate_unit_size(floor, parent_code):
 
 
 def calculate_and_add_unit_sizes(floor, parent_code):
+    """
+    Calculates the size of the units in the floor and adds them to the floor object. This function is basically a wrapper around calculate_unit_size and add_unit_size.
+    
+    :param: floor - The floor object containing the units to be sized.
+    :param: parent_code - The parent code of the floor to be used for finding the building plan.
+    """
+
     unit_sizes = calculate_unit_size(floor, parent_code)
     for unit_code, unit_size in unit_sizes:
         for unit in floor.units:
@@ -521,6 +578,16 @@ def calculate_and_add_unit_sizes(floor, parent_code):
 
 # Function to recursively find all path elements and text elements in the SVG with detailed attributes
 def find_paths_and_texts(element, depth=0):
+    """
+    Recursively finds all path elements and text elements in the SVG with detailed attributes by looping through the XML tree.
+    
+    :param: element - The current element in the XML tree to be processed.
+    :param: depth - The depth of the current element in the XML tree.
+    
+    :return paths:  - A list of tuples containing the path element and its attributes.
+    :return texts:  - A list of tuples containing the text element and its attributes.
+    """
+
     paths = []
     texts = []
     if element.tag.endswith("path"):
@@ -542,6 +609,12 @@ def find_paths_and_texts(element, depth=0):
 
 # Function to calculate the total length of the path
 def calculate_path_length(d):
+    """
+    Calculates the total length of the path by parsing the path data and calculating the length of each segment.
+    
+    :param: d - The path data string to be parsed.
+    
+    :return length:  - The total length of the path."""
     segments = re.findall(r"[MmLlHhVvZz]|[-+]?\d*\.\d+|[-+]?\d+", d)
     current_pos = (0, 0)
     start_pos = (0, 0)
@@ -602,6 +675,16 @@ def calculate_path_length(d):
 
 # Parse SVG and extract path elements and text elements
 def parse_svg(file):
+    """
+    Runs the relevent functions to parse the SVG file and extract the path elements and text elements.
+
+    :param: file - The path to the SVG file to be parsed.
+
+    :return paths:  - A list of tuples containing the path element and its attributes.
+    :return texts:  - A list of tuples containing the text element and its attributes.
+    :return tree:  - The ElementTree object containing the parsed SVG file.
+    :return root:  - The root element of the parsed SVG file.
+    """
     tree = ET.parse(file)
     root = tree.getroot()
     paths, texts = find_paths_and_texts(root)
@@ -609,6 +692,16 @@ def parse_svg(file):
 
 
 def get_path_bounds(d):
+    """
+    Gets the bounds of the path by parsing the path data and extracting the minimum and maximum x and y coordinates.
+
+    :param: d - The path data string to be parsed.
+
+    :return x0:  - The minimum x-coordinate of the path.
+    :return y0:  - The minimum y-coordinate of the path.
+    :return x1:  - The maximum x-coordinate of the path.
+    :return y1:  - The maximum y-coordinate of the path.
+    """
     numbers = list(map(float, re.findall(r"[-+]?\d*\.\d+|[-+]?\d+", d)))
     xs = numbers[::2]
     ys = numbers[1::2]
@@ -621,6 +714,15 @@ def is_closed_path(d):
 
 # Identify closed paths larger than a specific size
 def identify_closed_paths(paths, min_size):
+    """
+    Identifies closed paths larger than a specific size by checking if the path is closed and if the width and height of the path are greater than the specified minimum size.
+    
+    :param: paths - A list of tuples containing the path element and its attributes.
+    :param: min_size - The minimum size of the paths to be considered.
+    
+    :return closed_paths:  - A list of tuples containing the closed path elements and their attributes.
+    """
+
     closed_paths = []
     for path in paths:
         d = path[1]
@@ -635,6 +737,14 @@ def identify_closed_paths(paths, min_size):
 
 # Generate a list of room associations with paths and texts
 def generate_room_associations(paths, texts):
+    """
+    Generates a list of room associations with paths and texts by finding the nearest text element to each path element and associating them together.
+    
+    :param: paths - A list of tuples containing the path element and its attributes.
+    :param: texts - A list of tuples containing the text element and its attributes.
+    
+    :return associations:  - A list of dictionaries containing the room name, path, class, id, text x-coordinate, text y-coordinate, and length of the path.
+"""
     associations = []
     for idx, (path_element, d, class_name, id_name) in enumerate(paths):
 
@@ -682,6 +792,13 @@ def index():
 
 @app.route("/generate_svg", methods=["GET"])
 def generate_svg():
+    """
+    Generates an SVG file based on the specified parameters and returns the SVG content as a response to display on the frontend
+    
+    :return svg: - The SVG content to be displayed on the frontend.
+    """
+
+    # Get all the parameters from the request such as codes and filters
     level = request.args.get("level")
     parent_code = request.args.get("parent_code")
     visualization_type = request.args.get("visualization_type", "squarified")
@@ -695,6 +812,7 @@ def generate_svg():
     primary_trade = request.args.get("primary_trade")
     time_to_complete = request.args.get("time_to_complete")
 
+    # Add filters to the dictionary if they are present in the request
     if work_request_status:
         filters["work_request_status"] = work_request_status
     if requested_by:
@@ -711,22 +829,25 @@ def generate_svg():
     if cache_key in cache:
         svg_content = cache[cache_key]["svg_content"]
     else:
+        # If the cache key is not found, fetch the data from the database using the specified filters
         df = extract_data_from_access(filters)
         if df.empty:
             return jsonify({"error": "No data found for the selected filters."}), 404
-
+        # Generate the color scale for the data based on the issue count
         df = generate_color_scale(df)
         if df.empty:
             return jsonify({"error": "No valid data after applying color scale."}), 404
 
         hierarchy = df
 
+        # If we want a squarified treemap visualization go down this, however for the first 3 levels they would be identical only the unit level differs.
         if visualization_type == "squarified":
             if level == "site":
-                sites = generate_treemap_data(hierarchy)
+                sites = generate_treemap_data(hierarchy) #Populate the objects with the data
                 min_size = min([site.get_site_size() for site in sites.values()])
             elif level == "building":
-                hierarchy = df[df["SiteCode"] == parent_code]
+                hierarchy = df[df["SiteCode"] == parent_code] #As we no longer need sites, we only populate the next level with the data that would exist in that site.
+                # I.E if we have clicked on precinct RU0001 only populate the buidlings, floors and units that could exist in that site.
                 sites = generate_treemap_data(hierarchy)
                 min_size = min(
                     [
@@ -735,7 +856,7 @@ def generate_svg():
                         for building in site.buildings
                     ]
                 )
-            elif level == "floor":
+            elif level == "floor": #Same as above but for floors
                 site_code, building_code = parent_code.split(":")
                 hierarchy = df[
                     (df["SiteCode"] == site_code)
@@ -750,7 +871,7 @@ def generate_svg():
                         for floor in building.floors
                     ]
                 )
-            elif level == "unit":
+            elif level == "unit": #Same as above but for units
                 site_code, building_code, floor_code = parent_code.split(":")
                 hierarchy = df[
                     (df["SiteCode"] == site_code)
@@ -770,10 +891,12 @@ def generate_svg():
             else:
                 return "Invalid level", 400
 
-            create_interactive_treemap(
+            # As the if statements would fill out the variables we only run this one function to create the treemap.
+            create_interactive_treemap( 
                 sites, level, output_svg_file, width, height, min_size=min_size
             )
 
+        # If we want a building plan visualization go down this path
         elif visualization_type == "building-plans":
             if level == "site":
                 sites = generate_treemap_data(hierarchy)
@@ -812,6 +935,7 @@ def generate_svg():
                 create_interactive_treemap(
                     sites, level, output_svg_file, width, height, min_size=min_size
                 )
+                #At the unit level we populate a building plan instead of a treemap
             elif level == "unit":
                 site_code, building_code, floor_code = parent_code.split(":")
                 hierarchy = df[
@@ -820,6 +944,7 @@ def generate_svg():
                     & (df["Floor Code"] == floor_code)
                 ]
                 sites = generate_treemap_data(hierarchy)
+                # fetching the building plan
                 svg_file = f"../database/Architectural Drawings/{site_code}-{building_code}-{floor_code}.svg"
                 try:
                     min_size = min(
@@ -840,6 +965,7 @@ def generate_svg():
                     ]
                     norm = plt.Normalize(min(issue_counts), max(issue_counts))
 
+                    # Populate the svg
                     create_building_plan_visualization(
                         sites, svg_file, output_svg_file, norm
                     )
@@ -886,6 +1012,12 @@ def clear_cache():
 
 @app.route("/get_filter_options", methods=["GET"])
 def get_filter_options():
+    """
+    Fetches the options for the filters from the database and returns them as a JSON response to be used in the frontend.
+    
+    :return: options - A JSON response containing the options for the filters.
+    """
+
     conn_str = (
         r"DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};"
         r"DBQ=" + database_file + ";"
@@ -929,6 +1061,10 @@ def get_filter_options():
 
 @app.route("/get_unit_problems", methods=["GET"])
 def get_unit_problems():
+    """
+    Fetches the problems for a specific unit based on the unit code and the specified filters and returns them as a JSON response to be used in the frontend.
+    
+    :return: problems - A JSON response containing the problems for the specified unit."""
     code = request.args.get("unit_code")
 
     work_request_status = request.args.get("work_request_status")
