@@ -14,11 +14,13 @@ const Treemap = () => {
     work_request_status: [],
     craftsperson_name: [],
     primary_trade: [],
+    time_to_complete: [],
   });
   const [selectedFilters, setSelectedFilters] = useState({
     work_request_status: [],
     craftsperson_name: [],
     primary_trade: [],
+    time_to_complete: [],
   });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -36,6 +38,7 @@ const Treemap = () => {
     setLoading(true);
     setError('');
     try {
+      console.log(selectedFilters.time_to_complete.join(',')); // Debugging line
       const response = await axios.get('/generate_svg', {
         params: {
           level,
@@ -43,7 +46,8 @@ const Treemap = () => {
           visualization_type: visualizationType,
           work_request_status: selectedFilters.work_request_status.join(','),
           craftsperson_name: selectedFilters.craftsperson_name.join(','),
-          primary_trade: selectedFilters.primary_trade.join(',')
+          primary_trade: selectedFilters.primary_trade.join(','),
+          time_to_complete: selectedFilters.time_to_complete.join(','),
         }
       });
       setSvgContent(response.data);
@@ -66,6 +70,22 @@ const Treemap = () => {
     } catch (err) {
       console.error('Failed to fetch filter options', err);
     }
+  };
+
+  const handleFilterChange = (filterType, value) => {
+    setSelectedFilters((prevFilters) => {
+      const currentValues = prevFilters[filterType];
+      const updatedFilters = currentValues.includes(value)
+        ? currentValues.filter((v) => v !== value)
+        : [...currentValues, value];
+      
+      console.log(`Updated Filters for ${filterType}:`, updatedFilters); // Debugging line
+
+      return {
+        ...prevFilters,
+        [filterType]: updatedFilters,
+      };
+    });
   };
 
   const attachHoverHandlers = () => {
@@ -170,10 +190,11 @@ const Treemap = () => {
 
     d3.selectAll(".unit, .unit-room").on("click", async function () {
       const element = d3.select(this);
-      let old_id = element.attr("id");
+      let id = element.attr("id");
+      const className = element.attr("class");
   
       try {
-        const response = await fetch(`/get_unit_problems?unit_code=${old_id}&work_request_status=${selectedFilters.work_request_status.join(',')}&craftsperson_name=${selectedFilters.craftsperson_name.join(',')}&primary_trade=${selectedFilters.primary_trade.join(',')}`);
+        const response = await fetch(`/get_unit_problems?unit_code=${id}&work_request_status=${selectedFilters.work_request_status.join(',')}&craftsperson_name=${selectedFilters.craftsperson_name.join(',')}&primary_trade=${selectedFilters.primary_trade.join(',')}&time_to_complete=${selectedFilters.time_to_complete.join(',')}`);
         if (!response.ok) {
           const errorText = await response.text();
           console.error("Error fetching problems:", errorText);

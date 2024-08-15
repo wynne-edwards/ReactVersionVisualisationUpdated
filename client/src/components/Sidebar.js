@@ -63,11 +63,11 @@ const Sidebar = ({ filter, setFilter, filterOptions, handleBack, handleForward, 
                 <TableRow key={index}>
                   <TableCell padding="checkbox">
                     <Checkbox
-                      checked={filter[filterKey]?.includes(option) || false}
-                      onChange={() => handleCheckboxChange(filterKey, option)}
+                      checked={filter[filterKey]?.includes(option.value || option) || false}
+                      onChange={() => handleCheckboxChange(filterKey, option.value || option)}
                     />
                   </TableCell>
-                  <TableCell>{option}</TableCell>
+                  <TableCell>{option.label || option}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -103,6 +103,19 @@ const Sidebar = ({ filter, setFilter, filterOptions, handleBack, handleForward, 
             Work Request Status
           </Button>
           {renderFilterPopover('work_request_status', filterOptions.work_request_status)}
+        </>
+      )}
+
+      {sidebarOpen && (
+        <>
+          <Button variant="outlined" onClick={(e) => handleButtonClick(e, 'time_to_complete')} sx={{ mb: 2 }}>
+            Overdue
+          </Button>
+          {renderFilterPopover('time_to_complete', [
+            { label: "Less than 10 days", value: "less_than_10" },
+            { label: "10-30 days", value: "10-30" },
+            { label: "More than 30 days", value: "more_than_30" },
+          ])}
         </>
       )}
 

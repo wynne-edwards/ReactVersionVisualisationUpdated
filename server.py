@@ -100,8 +100,8 @@ class Unit:
 
 def extract_data_from_access(filters):
     conn_str = (
-        r"DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};"
-        r"DBQ=" + database_file + ";"
+        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+        r'DBQ=' + database_file + ';'
     )
     conn = pyodbc.connect(conn_str)
     query = """
@@ -125,23 +125,32 @@ def extract_data_from_access(filters):
     WHERE 1=1
     """
 
-    # Apply Work Request Status filter
-    if "work_request_status" in filters and filters["work_request_status"]:
-        statuses = filters["work_request_status"].split(",")
-        status_list = ", ".join([f"'{status.strip()}'" for status in statuses])
-        query += f" AND Combined.[Work Request Status] IN ({status_list})"
+    if 'work_request_status' in filters and filters['work_request_status']:
+        filters['work_request_status'] = filters['work_request_status'].split(',')
+        query += "AND Combined.[Work Request Status] IN ({})".format(
+            ', '.join(f"'{status.strip()}'" for status in filters['work_request_status'])
+        )
 
-    # Apply Craftsperson Name filter
-    if "craftsperson_name" in filters and filters["craftsperson_name"]:
-        names = filters["craftsperson_name"].split(",")
-        name_list = ", ".join([f"'{name.strip()}'" for name in names])
-        query += f" AND Craftsperson.[Craftsperson Name] IN ({name_list})"
+    if 'craftsperson_name' in filters and filters['craftsperson_name']:
+        filters['craftsperson_name'] = filters['craftsperson_name'].split(',')
+        query += "AND Craftsperson.[Craftsperson Name] IN ({})".format(
+            ', '.join(f"'{name.strip()}'" for name in filters['craftsperson_name'])
+        )
 
-    # Apply Primary Trade filter
-    if "primary_trade" in filters and filters["primary_trade"]:
-        trades = filters["primary_trade"].split(",")
-        trade_list = ", ".join([f"'{trade.strip()}'" for trade in trades])
-        query += f" AND Craftsperson.[Primary Trade] IN ({trade_list})"
+    if 'primary_trade' in filters and filters['primary_trade']:
+        filters['primary_trade'] = filters['primary_trade'].split(',')
+        query += "AND Craftsperson.[Primary Trade] IN ({})".format(
+            ', '.join(f"'{trade.strip()}'" for trade in filters['primary_trade'])
+        )
+    if 'time_to_complete' in filters and filters['time_to_complete']:
+        time_to_complete_filters = filters['time_to_complete'].split(',')
+        for condition in time_to_complete_filters:
+            if condition == "less_than_10":
+                query += "AND DATEDIFF('d', [Date and Time Requested], [Date and Time Issued]) < 10 "
+            elif condition == "10-30":
+                query += "AND DATEDIFF('d', [Date and Time Requested], [Date and Time Issued]) BETWEEN 10 AND 30 "
+            elif condition == "more_than_30":
+                query += "AND DATEDIFF('d', [Date and Time Requested], [Date and Time Issued]) > 30 "
 
     query += """
     GROUP BY 
@@ -155,15 +164,15 @@ def extract_data_from_access(filters):
         Unit.[Unit Name];
     """
 
+    print(f"Executing query: {query}")
     cursor = conn.cursor()
     cursor.execute(query)
     rows = cursor.fetchall()
     conn.close()
-
-    df = pd.DataFrame.from_records(
-        rows, columns=[desc[0] for desc in cursor.description]
-    )
+    
+    df = pd.DataFrame.from_records(rows, columns=[desc[0] for desc in cursor.description])
     return df
+
 
 
 def generate_treemap_data(df):
@@ -684,6 +693,7 @@ def generate_svg():
     requested_by = request.args.get("requested_by")
     craftsperson_name = request.args.get("craftsperson_name")
     primary_trade = request.args.get("primary_trade")
+    time_to_complete = request.args.get("time_to_complete")
 
     if work_request_status:
         filters["work_request_status"] = work_request_status
@@ -693,6 +703,8 @@ def generate_svg():
         filters["craftsperson_name"] = craftsperson_name
     if primary_trade:
         filters["primary_trade"] = primary_trade
+    if time_to_complete:
+        filters["time_to_complete"] = time_to_complete
 
     cache_key = f"{level}-{parent_code}-{filters}-{visualization_type}"
 
