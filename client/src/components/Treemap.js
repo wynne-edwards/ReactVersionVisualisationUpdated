@@ -42,10 +42,10 @@ const Treemap = () => {
   const fetchSvgData = async () => {
     setLoading(true);
     setError('');
+    setSvgContent('');
     try {
-      console.log(selectedFilters.time_to_complete.join(','));
       const response = await axios.get('/generate_svg', {
-        params: { //Different filters
+        params: {
           level,
           parent_code: parentCode,
           visualization_type: visualizationType,
@@ -55,6 +55,7 @@ const Treemap = () => {
           time_to_complete: selectedFilters.time_to_complete.join(','),
         }
       });
+      console.log("SVG Content:", response.data);  // Log SVG content
       setSvgContent(response.data);
     } catch (err) {
       console.error('Error fetching SVG data:', err);
@@ -270,10 +271,12 @@ const Treemap = () => {
   useEffect(() => {
     if (svgContent) {
       const container = d3.select("#treemap");
-
       container.selectAll('*').remove();
       container.html(svgContent);
 
+      if (visualizationType === 'building-plans') {
+        container.selectAll("text").remove();  // This removes all text elements from the SVG
+    }
       container.selectAll("rect, path.unit-room, path.unit").each(function () {
         const element = d3.select(this);
         let id = element.attr("id");
@@ -287,7 +290,6 @@ const Treemap = () => {
         } else if (className === "unit" || className === "unit-room") { // Building plan id does not include a precinct code so it only has 3 parts B14;F1;G0002
           id = id.split(";")[2] || id.split(":")[3];
         }
-
         container.append("div")
           .attr("id", `hover-info-${id}`)
           .attr("class", "hover-info-box")
@@ -308,7 +310,6 @@ const Treemap = () => {
             <strong>Size:</strong> ${element.attr("data_size")}
           `);
       });
-
       attachHoverHandlers();
       attachClickHandlers();
     }
