@@ -1,0 +1,23 @@
+Most of this is covered in the Read Me on GitHub, however more directions can never hurt.
+
+The instructions use pgAdmin 4 to restore a backup of the database (the backup is the file found in the Database Files folder, same as this document).
+
+
+Step 1.
+Create a pgAdmin connection, I left mine as default in the code (username: postgres ; password: postgres). If you change yours, please can you adjust the parameters for connection as found at the top of the server.py file.
+
+Step 2. 
+Create a database. The code in server.py has the name set as DemoData so for a seemless install do the same.
+
+Step 3. 
+Right click on the database you have created and click restore. Locate the file (Note: On windows it sets the visible files to a .backup file type. However the actual backup is a tar file and wont be visible, so, to view the file in your explorer please click on the dropdown and select All Files) Select the file and click restore.
+
+Step 4. Once you have clicked restore, you should have a running database of my instance. For any configuration differences from the following options will require you to adjust the server.py file.
+
+database_config = {
+    'dbname': 'DemoData',
+    'user': 'postgres',
+    'password': 'postgres',
+    'host': '127.0.0.1',  # or your server's IP address
+    'port': '5432'  # default PostgreSQL port
+}

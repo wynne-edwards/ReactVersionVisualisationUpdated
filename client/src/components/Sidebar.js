@@ -157,6 +157,7 @@ const Sidebar = ({ filter, setFilter, filterOptions, handleBack, handleForward, 
       
       )}
 
+
       {/* Toggle Switch for Visualization */}
       {sidebarOpen && (
         <FormControlLabel

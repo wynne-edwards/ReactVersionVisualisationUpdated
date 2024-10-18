@@ -18,7 +18,7 @@ app = Flask(__name__, static_folder="client/build", static_url_path="")
 Compress(app)
 
 database_config = {
-    'dbname': 'postgres',
+    'dbname': 'DemoData',
     'user': 'postgres',
     'password': 'postgres',
     'host': '127.0.0.1',  # or your server's IP address
@@ -35,7 +35,7 @@ def get_postgres_connection():
         print(f"Error connecting to PostgreSQL database: {e}")
         return None
 
-output_svg_file = "../database/treemap.svg"
+output_svg_file = "../Data/treemap.svg"
 cache = {}
 filter_data = {}  # Global variable to store filter data
 
@@ -287,7 +287,7 @@ def generate_color_scale(df, column="IssueCount"):
 def create_building_plan_visualization(sites, parent_code, output_file, norm):
     print(f"Coloring units for {parent_code}...")
     site_code, building_code, floor_code = parent_code.split(":")
-    svg_file = f"../database/Architectural Drawings/{site_code}-{building_code}-{floor_code}.svg"
+    svg_file = f"../Data/Diagrams/{site_code}-{building_code}-{floor_code}.svg"
     
     paths, texts, tree, root = parse_svg(svg_file)
     rooms = generate_room_associations(paths, texts)
@@ -507,7 +507,7 @@ def create_interactive_treemap(sites, level, output_file, width, height, min_siz
 
 def calculate_unit_size(floor, parent_code):
     site_code, building_code, floor_code = parent_code.split(":")
-    svg_file = f"../database/Architectural Drawings/{site_code}-{building_code}-{floor_code}.svg"
+    svg_file = f"../Data/Diagrams/{site_code}-{building_code}-{floor_code}.svg"
     
     try:
         paths, texts, tree, root = parse_svg(svg_file)
